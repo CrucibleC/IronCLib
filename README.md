@@ -1,2 +1,290 @@
-# IronCLib
-Drop-in header library for safer C code
+# IronCLib (Beta)
+IronCLib is a small, header-only C library for writing safer, more consistent C code.
+
+It provides independent, composable utilities that address common pitfalls like unsafe casts, fragile headers, and inconsistent error handling. Each header works on its own, with no external setup required.
+
+IronCLib is not a new programming model, just focused tools that make C code more predictable, portable, and easier to reason about. 
+
+C99 compatibility.
+
+## Table of Contents
+* [IronCLib](#ironclib)
+* [Quick Intro](#quick-intro)
+* [Library Overview](#library-overview)
+* [Read more?](#read-more)
+* [License](#license)
+* [Build Requirements](#build-requirements)
+* [Build and Test Guarantees](#build-and-test-guarantees)
+* [TODO](#todo)
+
+## Quick Intro
+A fast showcase of how the library is used, before more in-depth descriptions and examples.
+
+### Ready-to-use utilities
+The following provides quick examples of the IronCLib parts that require no setup. 
+
+#### Compile-time assert
+Verify boolean expressions at compile-time.
+
+```c
+#include "ironclib/ic_static_assert.h"
+
+IC_STATIC_ASSERT(sizeof(int) >= 4, "int must be 4 bytes or more");
+```
+
+#### Inline and safe header functions
+Write functions safely in headers.
+
+```c
+#include "ironclib/ic_inline.h"
+
+IC_HEADER_FUNC int add(const int a, const int b) { return a+b; }
+```
+
+#### Memory allocation with safety checks
+Allocate memory on heap or return NULL for unsafe arguments.
+
+```c
+#include "ironclib/ic_memory.h"
+
+int* ten_ints = IC_MALLOC_ARRAY(int, 10);
+```
+
+#### Bounded loops
+Write loops with a maximum number of iterations.
+
+```c
+#include "ironclib/ic_bounded_loop.h"
+
+int res = 0;
+IC_BOUNDED_WHILE(0 == res, 1000) // max 1000 iterations
+{
+    res = foo();
+}
+```
+
+### Code generation utilities
+The following provides quick examples of how to generate code or use it.
+
+- Ad-hoc: defined where used
+- Monolithic: generated once per project
+
+#### Type-safe enums
+Ad-hoc: Quickly create a type-safe alternative to enums.
+
+```c
+#include "ironclib/ic_typenum.h"
+
+#define USE_MODE_LIST(X, Type) \
+    X(Type, Quality, 0, "Usage optimized for quality") \
+    X(Type, Performance, 1, "Usage optimized for performance") \
+    X(Type, Battery, 2, "Usage optimized for battery duration") 
+IC_TYPENUM_FULL(UseMode, uint8_t, USE_MODE_LIST)
+
+void run_process(UseMode mode);
+```
+
+#### Numeric casting functions
+Monolithic: Avoid undefined behavior when casting by generating cast functions from a once-defined list. Pre-made header provided.
+
+```c
+#include "premade/numbers.h"
+
+i32 i = cast_f64_to_i32(9876.543);
+```
+
+#### Opaque storage
+Ad-hoc: Create opaque storage types quickly and with standardized method.
+
+```c
+// Header
+#include "ironclib/ic_opaque_storage.h"
+
+#define MAT4_SIZE  (sizeof(float) * 16)
+#define MAT4_ALIGN (IC_ALIGNOF(float))
+IC_OPAQUE_STORAGE(Matrix4x4, MAT4_ALIGN, MAT4_SIZE) // fixed-size opaque type
+
+void mat4_set_identity(Matrix4x4* const m);
+float mat4_get(const Matrix4x4* const m, const int row, const int col);
+
+// Source
+typedef struct Matrix4x4Impl {
+    float data[16];
+} Matrix4x4Impl;
+IC_OPAQUE_IMPL_ASSERT(Matrix4x4Impl, MAT4_ALIGN, MAT4_SIZE)
+```
+
+#### Standardized result types
+Ad-hoc and monolithic: Quickly define result types (possibly based on global error type). Pre-made header provided.
+
+```c
+// Matrix4x4 header
+#include "premade/global_result.h"
+
+GLOBAL_RESULT_TYPE(Matrix4x4)
+
+Matrix4x4Result mat4_inverse(const Matrix4x4* const m);
+
+// Usage
+Matrix4x4Result res = mat4_inverse(&m);
+if (!res.ok) { /* handle error */ }
+```
+
+### Multithreading and Cooperative Jobs
+Standardized interface to create and manage threads across platforms. Comes with tasks (threads), mutexes, atomics, and a thread sleep. 
+
+Also includes a lightweight cooperative job system for single-threaded step-based scheduling (coroutines-style, no OS threads).
+
+#### Atomic integers
+IronC provides one portable atomic 32-bit integer, safely set and accessed across threads.
+
+```c
+#include "ironclib/ic_concurrency.h"
+
+ic_atomic_i32 atom = ic_make_atomic(3); // atom = 3
+ic_atomic_store(&atom, 7);              // atom = 7
+int32_t val = ic_atomic_load(&atom);    // val  = 7
+```
+
+#### Run task in another thread
+A wrapper for portable threads, in the form of tasks, is provided.
+
+```c
+#include "ironclib/ic_concurrency.h"
+
+static int work(void* arg)
+{
+    int* value = (int*)arg;
+    (*value)++;
+    return 42;
+}
+
+int foo()
+{
+    ic_task task;
+    int value = 0;
+
+    ic_task_init(&task, work, &value);
+    // work in between init and join is done in parallel
+    ic_task_join(&task);
+
+    return value; // incremented by thread
+}
+```
+
+#### Wait for signals
+Lightweight and easy-to-use system for waiting on signals without using CPU (even for sleep).
+
+```c
+#include "ironclib/ic_concurrency_signal"
+
+// Thread 1A
+ic_gate_wait(&gate);
+// Thread 2A
+ic_gate_signal_one(&gate);
+
+// Thread 1B
+ic_broadcast_wait(&broadcast);
+// Thread 2B
+ic_broadcast_signal_all(&broadcast);
+```
+
+#### Cooperative jobs and scheduling
+Lightweight cooperative multitasking for single-threaded systems. Define jobs as ordered steps and schedule them incrementally with configurable priorities and execution weights.
+
+```c
+#include "ironclib/ic_co_job.h"
+
+ic_co_scheduler sched = ic_make_co_scheduler();
+
+ic_co_job job = IC_MAKE_CO_JOB(load_func, process_func, save_func);
+ic_co_scheduler_add_job(&sched, &job, NULL, 2, 1);
+
+while (!ic_co_scheduler_is_done(&sched))
+{
+    ic_co_scheduler_tick(&sched);
+}
+```
+
+## Library Overview
+IronCLib is split into small, independent headers. You can use any part on its own - but they are designed to be adopted gradually based on your needs.
+
+The lower sections introduce more opinionated patterns. These are most effective when applied consistently, rather than mixed with raw C equivalents within the same layer of a codebase.
+
+### Start here (instant, low-risk improvements)
+Drop-in utilities that improve safety and portability without changing how you write C.
+
+- `ic_static_assert.h`
+- `ic_inline.h`
+- `ic_memory.h`
+
+### Optional utilities (use as needed)
+Helpful tools that solve specific problems but don’t require architectural changes.
+
+- `ic_bounded_loop.h`
+- `ic_typenum.h`
+- `ic_num_cast.h`
+
+### Architectural patterns (adopt deliberately)
+These introduce stronger design patterns and are most effective when used consistently across a module or project.
+
+- `ic_opaque_storage.h`
+- `ic_result.h`
+
+> *Note: IronCLib works best when adopted consistently within a module. Start small, don’t adopt everything at once, and expand only where it adds value.*
+
+### Multitasking systems
+Tools for running tasks across threads or scheduling step-based jobs in a single thread.
+
+- `ic_concurrency.h`
+- `ic_concurrency_signal.h`
+- `ic_co_job.h`
+
+## Read more?
+This document is only a quick intro.
+
+- For more in-depth explanations of the headers, [go here](docs/header_library.md).
+- For ideas on how to use the library in your project, [go here](docs/using_in_your_system.md).
+- For premade monolithic files, [go here](docs/premade). These are referenced in documentation.
+- For a minimal, header-based test-framework or information on how IronCLib is tested, [go here](ironhammerc).
+
+## License
+IronCLib is licensed under the Apache License, Version 2.0. See the [LICENSE](LICENSE) file for details.
+
+## Build Requirements
+Requires C99 or newer.
+
+MSVC (/W4 + /WX) requires /wd4127 due to `do { ... } while(0)` macros. GCC and Clang handle this pattern without issues.
+
+When using `ic_num_cast.h`, some compilers (especially non-GCC, non-Clang, or non-MSVC, or non-standard toolchains) may require manual warning suppression depending on their diagnostic system and C standard support.
+
+`ic_static_assert.h` uses native static assert when available, otherwise a typedef-based fallback is used, which may trigger unused-typedef warnings depending on the compiler (handle with e.g. `-Wno-unused-local-typedefs` on GCC/Clang).
+
+`ic_concurrency.h` requires `threads.h`/`stdatomic.h`, `pthread.h`, or `Windows.h` depending on platform.
+
+## Build and Test Guarantees
+IronCLib is continuously tested on a build matrix covering multiple compilers, C standards, and optimization levels.
+
+All headers are verified against:
+
+| Compiler | C Standard | Optimization | Status |
+|----------|-----------|-------------|--------|
+| gcc      | C99       | O0          | Verified |
+| gcc      | C99       | O2          | Verified |
+| gcc      | C11       | O0          | Verified |
+| gcc      | C11       | O2          | Verified |
+| clang    | C99       | O0          | Verified |
+| clang    | C99       | O2          | Verified |
+| clang    | C11       | O0          | Verified |
+| clang    | C11       | O2          | Verified |
+| msvc     | C99       | O0          | Verified |
+| msvc     | C99       | O2          | Verified |
+| msvc     | C11       | O0          | Verified |
+| msvc     | C11       | O2          | Verified |
+
+All configurations above are verified on Windows x86_64.
+
+# TODO
+- To enter V1, test on Linux platform as well
+- Add AUTHORS file
+- Add C++ compatibility guards?

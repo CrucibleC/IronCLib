@@ -1,0 +1,145 @@
+/*
+ * Copyright 2026 CrucibleC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+#ifndef IC_OPAQUE_STORAGE_H
+#define IC_OPAQUE_STORAGE_H
+
+/*
+===============================================================================
+IC Opaque Storage
+
+C Version Compatibility:
+- Works on C99+ (may come with reduced guarantees)
+- Full correctness on C11+ or compilers with alignment support
+
+-------------------------------------------------------------------------------
+WHAT THIS DOES
+
+Provides a way to:
+- Hide struct implementation (encapsulation)
+- Allow stack allocation (no malloc required)
+- Enforce size and alignment at compile time (ABI safety)
+
+-------------------------------------------------------------------------------
+HOW TO USE
+
+--- In your header (.h) ---
+
+    #include "ic_opaque_storage.h"
+
+    #define COLOR_SIZE   (sizeof(int) * 3)
+    #define COLOR_ALIGN  (IC_ALIGNOF(int))
+
+    IC_OPAQUE_STORAGE(Color, COLOR_ALIGN, COLOR_SIZE)
+
+    void color_init(Color* c, int r, int g, int b);
+    int  color_get_red(const Color* c);
+
+
+--- In your source (.c) ---
+
+    #include "color.h"
+
+    struct ColorImpl {
+        int r, g, b;
+    };
+    typedef struct ColorImpl ColorImpl;
+
+    IC_OPAQUE_IMPL_ASSERT(Color, COLOR_ALIGN, COLOR_SIZE)
+
+    void color_init(Color* c, int r, int g, int b) {
+        ColorImpl* real = (ColorImpl*)c;
+        real->r = r;
+        real->g = g;
+        real->b = b;
+    }
+
+    int color_get_red(const Color* c) {
+        const ColorImpl* real = (const ColorImpl*)c;
+        return real->r;
+    }
+
+
+--- In user code ---
+
+    Color c;                    // stack allocation
+    color_init(&c, 1, 2, 3);   // no malloc needed
+
+-------------------------------------------------------------------------------
+IMPORTANT RULES
+
+1) ALWAYS call IC_OPAQUE_IMPL_ASSERT in the .c file
+2) NEVER expose struct fields in headers
+3) alignment must be <= alignof(max_align_t) for portability
+4) access data only via implementation (casting internally)
+
+===============================================================================
+*/
+
+#include <stddef.h>
+#include "ic_static_assert.h"
+#include "ic_memory.h"
+
+/*
+===============================================================================
+Alignment policy
+
+Avoid max_align_t entirely because:
+- MSVC C mode does not reliably expose it
+- cross-platform behavior is inconsistent
+- engine systems should not depend on platform typedefs
+
+Instead use a fixed safe upper bound.
+===============================================================================
+*/
+
+#ifndef IC_MAX_ALIGNMENT
+    #define IC_MAX_ALIGNMENT 16
+#endif
+
+/*
+===============================================================================
+Opaque storage definition (for headers)
+===============================================================================
+*/
+
+#define IC_OPAQUE_STORAGE(name, alignment, size)                     \
+    IC_STATIC_ASSERT((alignment) <= IC_MAX_ALIGNMENT, "alignment too large"); \
+                                                                      \
+    typedef struct {                                                  \
+        IC_ALIGNAS(alignment) ic_byte data[(size)];                  \
+    } name;
+
+/*
+===============================================================================
+Definition check (for .c files)
+===============================================================================
+*/
+
+#ifndef IC_ALIGNAS_IS_BLANK
+
+    #define IC_OPAQUE_IMPL_ASSERT(name, alignment, size) \
+        IC_STATIC_ASSERT(sizeof(name) == (size), "size mismatch"); \
+        IC_STATIC_ASSERT(IC_ALIGNOF(name) == (alignment), "alignment mismatch");
+
+#else
+
+    #define IC_OPAQUE_IMPL_ASSERT(name, alignment, size) \
+        IC_STATIC_ASSERT(sizeof(name) == (size), "size mismatch"); \
+
+#endif
+
+#endif // IC_OPAQUE_STORAGE_H
