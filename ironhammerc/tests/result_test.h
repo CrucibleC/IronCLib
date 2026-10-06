@@ -25,9 +25,9 @@ IHC_TEST(verify_ok_and_err_functions_work_for_typenum_error)
     IHC_ASSERT(ok_res.ok);
     IHC_CHECK(ok_res.data.value == 7);
 
-    const IntResult err_res = IntResult_err(Error_Runtime);
+    const IntResult err_res = IntResult_err(AppError_Runtime);
     IHC_ASSERT(!err_res.ok);
-    IHC_CHECK(Error_eq(err_res.data.error, Error_Runtime));
+    IHC_CHECK(AppError_eq(err_res.data.error, AppError_Runtime));
 }
 
 IHC_TEST(verify_optional_accessor_macros_work)
@@ -36,12 +36,12 @@ IHC_TEST(verify_optional_accessor_macros_work)
     IHC_ASSERT(IC_RESULT_IS_OK(ok_res));
     IHC_CHECK(IC_RESULT_VALUE(ok_res) == 42.1337);
 
-    const DoubleResult err_res = DoubleResult_err(Error_Argument);
+    const DoubleResult err_res = DoubleResult_err(AppError_Argument);
     IHC_ASSERT(!IC_RESULT_IS_OK(err_res));
-    IHC_CHECK(Error_eq(IC_RESULT_ERROR(err_res), Error_Argument));
+    IHC_CHECK(AppError_eq(IC_RESULT_ERROR(err_res), AppError_Argument));
 }
 
-IC_HEADER_FUNC IntResult test_try_propagation(const Error expected_return_error)
+IC_HEADER_FUNC IntResult test_try_propagation(const AppError expected_return_error)
 {
     const StringViewResult success_res = StringViewResult_ok("This is good and will not return early");
     IC_TRY_RETURN_ERR_AS(IntResult, success_res);
@@ -54,11 +54,11 @@ IC_HEADER_FUNC IntResult test_try_propagation(const Error expected_return_error)
 
 IHC_TEST(verify_try_macro_propagates_error_in_same_error_type_context)
 {
-    const Error expected_error = Error_CorruptData;
+    const AppError expected_error = AppError_CorruptData;
     const IntResult err_prop = test_try_propagation(expected_error);
 
     IHC_ASSERT(!err_prop.ok);
-    IHC_CHECK(Error_eq(expected_error, err_prop.data.error));
+    IHC_CHECK(AppError_eq(expected_error, err_prop.data.error));
 }
 
 #endif // IRON_HAMMER_C_TESTS_RESULT_TEST_H

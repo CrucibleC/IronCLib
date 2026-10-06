@@ -32,6 +32,8 @@
     #define IC_THREAD_WIN
     #include <Windows.h>
 #elif defined(__unix__) || defined(__APPLE__)
+    // In strict ISO mode (-std=c99/c11) glibc hides POSIX functions such as nanosleep.
+    // Compile with _POSIX_C_SOURCE=200809L (or higher) defined before any system header.
     #define IC_THREAD_PTHREAD
     #include <pthread.h>
 #else

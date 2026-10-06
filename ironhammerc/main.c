@@ -10,6 +10,19 @@ do { \
 // Set to 1 to enable stress tests, which can be time-consuming; 0 to disable them for quicker runs
 #define RUN_STRESS_TESTS 0
 
+// Verify the build really uses the C standard and optimization level it was configured for
+#if defined(IHC_EXPECTED_STDC_VERSION)
+    #if !defined(__STDC_VERSION__) || (__STDC_VERSION__ != IHC_EXPECTED_STDC_VERSION)
+        #error "Build is not using the C standard requested by C_STD"
+    #endif
+#endif
+
+#if defined(IHC_EXPECTED_OPTIMIZED) && (defined(__GNUC__) || defined(__clang__))
+    #if IHC_EXPECTED_OPTIMIZED != defined(__OPTIMIZE__)
+        #error "Build is not using the optimization level requested by OPT_LEVEL"
+    #endif
+#endif
+
 // Includes
 #include <stdio.h>
 #include "ic_hammer.h"

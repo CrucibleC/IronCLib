@@ -260,31 +260,32 @@ MSVC (/W4 + /WX) requires /wd4127 due to `do { ... } while(0)` macros. GCC and C
 
 When using `ic_num_cast.h`, some compilers (especially non-GCC, non-Clang, or non-MSVC, or non-standard toolchains) may require manual warning suppression depending on their diagnostic system and C standard support.
 
-`ic_static_assert.h` uses native static assert when available, otherwise a typedef-based fallback is used, which may trigger unused-typedef warnings depending on the compiler (handle with e.g. `-Wno-unused-local-typedefs` on GCC/Clang).
+`ic_static_assert.h` uses native static assert when available, otherwise a fallback based on an `extern` array declaration is used (no extra warning suppression needed on GCC/Clang).
 
-`ic_concurrency.h` requires `threads.h`/`stdatomic.h`, `pthread.h`, or `Windows.h` depending on platform.
+`ic_concurrency.h` requires `threads.h`/`stdatomic.h`, `pthread.h`, or `Windows.h` depending on platform. On Linux/POSIX in strict ISO mode (`-std=c99`/`-std=c11` rather than `gnu99`/`gnu11`), define `_POSIX_C_SOURCE=200809L` for the whole build, otherwise POSIX functions such as `nanosleep` are not declared. See [ic_concurrency.h](docs/header_library.md#ic_concurrencyh) for details.
 
 ## Build and Test Guarantees
 IronCLib is continuously tested on a build matrix covering multiple compilers, C standards, and optimization levels.
 
 All headers are verified against:
 
-| Compiler | C Standard | Optimization | Status |
-|----------|-----------|-------------|--------|
-| gcc      | C99       | O0          | Verified |
-| gcc      | C99       | O2          | Verified |
-| gcc      | C11       | O0          | Verified |
-| gcc      | C11       | O2          | Verified |
-| clang    | C99       | O0          | Verified |
-| clang    | C99       | O2          | Verified |
-| clang    | C11       | O0          | Verified |
-| clang    | C11       | O2          | Verified |
-| msvc     | C99       | O0          | Verified |
-| msvc     | C99       | O2          | Verified |
-| msvc     | C11       | O0          | Verified |
-| msvc     | C11       | O2          | Verified |
+| Compiler | C Standard | Optimization | Windows x86_64 | Linux x86_64 |
+|----------|-----------|-------------|----------------|--------------|
+| gcc      | C99       | O0          | Verified | Verified |
+| gcc      | C99       | O2          | Verified | Verified |
+| gcc      | C11       | O0          | Verified | Verified |
+| gcc      | C11       | O2          | Verified | Verified |
+| clang    | C99       | O0          | Verified | Verified |
+| clang    | C99       | O2          | Verified | Verified |
+| clang    | C11       | O0          | Verified | Verified |
+| clang    | C11       | O2          | Verified | Verified |
+| clang    | C11 + `IC_USE_C11_THREADS_AND_ATOMICS` | O2 | Not tested (MinGW has no `threads.h`) | Verified |
+| msvc     | C99       | O0 / O2     | Not applicable (MSVC has no C99 mode) | Not applicable |
+| msvc     | C11       | O0          | Verified | Not applicable |
+| msvc     | C11       | O2          | Verified | Not applicable |
+| msvc     | C11 + `IC_USE_C11_THREADS_AND_ATOMICS` | O2 | Verified (C11 threads, MSVC atomics; VS 2022 17.8+) | Not applicable |
 
-All configurations above are verified on Windows x86_64.
+Every build uses strict ISO mode (`-std=c99`/`-std=c11`, `/std:c11` on MSVC) with all warnings as errors, and the test binary fails to compile if its C standard or optimization level differs from the one it is labelled with. On Windows, gcc and clang are the MinGW (MSYS2) toolchains. Linux is tested under WSL2 with `_POSIX_C_SOURCE=200809L` defined.
 
 # TODO
 - To enter V1, test on Linux platform as well

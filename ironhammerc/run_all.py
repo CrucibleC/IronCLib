@@ -1,6 +1,8 @@
 import subprocess
 import os
 import shutil
+import re
+import json
 
 # -----------------------------
 # Paths (portable)
@@ -31,33 +33,75 @@ def get_generator(preferred):
         return "Unix Makefiles"
 
 
-def has_visual_studio():
+def find_visual_studio_generator():
+    # Ask vswhere (ships with every VS install) for the newest VS with C++ tools
+    if not IS_WINDOWS:
+        return None
+
+    program_files = os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")
+    vswhere = os.path.join(
+        program_files, "Microsoft Visual Studio", "Installer", "vswhere.exe"
+    )
+    if not os.path.exists(vswhere):
+        return None
+
     try:
-        test_dir = os.path.join(BASE_DIR, "tmp_vs_check")
-        subprocess.run(
+        output = subprocess.check_output(
             [
-                "cmake",
-                "-G", "Visual Studio 17 2022",
-                "-S", BASE_DIR,
-                "-B", test_dir
+                vswhere,
+                "-latest",
+                "-products", "*",
+                "-requires", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+                "-format", "json",
             ],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
+            text=True,
         )
-        shutil.rmtree(test_dir, ignore_errors=True)
-        return True
-    except Exception:
-        return False
+        installs = json.loads(output)
+    except (subprocess.CalledProcessError, ValueError):
+        return None
+
+    if not installs:
+        return None
+
+    # e.g. installationVersion "17.14.x" + productLineVersion "2022"
+    install = installs[0]
+    major = install["installationVersion"].split(".")[0]
+    year = install["catalog"]["productLineVersion"]
+    return f"Visual Studio {major} {year}"
+
+
+def find_compiler(name):
+    # Prefer plain "<name>", otherwise the highest versioned "<name>-N" on PATH
+    if shutil.which(name):
+        return name
+
+    best = None
+    best_version = -1
+    pattern = re.compile(rf"^{re.escape(name)}-(\d+)(\.exe)?$")
+
+    for path_dir in os.environ.get("PATH", "").split(os.pathsep):
+        if not os.path.isdir(path_dir):
+            continue
+        for name in os.listdir(path_dir):
+            match = pattern.match(name)
+            if match and int(match.group(1)) > best_version:
+                best_version = int(match.group(1))
+                best = os.path.join(path_dir, name)
+
+    return best
 
 
 # -----------------------------
 # Compiler matrix
 # -----------------------------
 configs = [
-    ("gcc", "gcc", "Ninja"),
-    ("clang", "clang", "Ninja"),
-    ("msvc", None, "Visual Studio 17 2022"),
+    ("gcc", find_compiler("gcc"), "Ninja"),
+    ("clang", find_compiler("clang"), "Ninja"),
 ]
+
+# MSVC is only available on Windows
+if IS_WINDOWS:
+    configs.append(("msvc", None, find_visual_studio_generator()))
 
 
 # -----------------------------
@@ -72,6 +116,16 @@ tests = [
     ("c99", "-O2"),
     ("c11", "-O2"),
 ]
+
+# One-off runs for optional backends, so they don't multiply the whole matrix
+# (compiler, std, opt, tag, defines)
+C11_THREADS = ["IC_USE_C11_THREADS_AND_ATOMICS"]
+
+# MinGW has no C11 <threads.h>, so on Windows the C11 backend is tested with MSVC (VS 2022 17.8+)
+if IS_WINDOWS:
+    extra_tests = [("msvc", "c11", "-O2", "c11threads", C11_THREADS)]
+else:
+    extra_tests = [("clang", "c11", "-O2", "c11threads", C11_THREADS)]
 
 
 # -----------------------------
@@ -88,10 +142,6 @@ def run_exe(exe):
     return result.returncode
 
 
-def tool_exists(cmd):
-    return shutil.which(cmd) is not None
-
-
 # -----------------------------
 # Test runner
 # -----------------------------
@@ -100,27 +150,40 @@ successes = []
 
 for compiler_name, compiler, preferred_gen in configs:
 
-    if compiler_name == "gcc" and not tool_exists("gcc"):
-        print("gcc not found, skipping")
-        continue
-
-    if compiler_name == "clang" and not tool_exists("clang"):
-        print("clang not found, skipping")
-        continue
+    if compiler_name in ("gcc", "clang"):
+        if not compiler:
+            print(f"{compiler_name} not found, skipping")
+            continue
+        print(f"Using {compiler_name}: {compiler}")
 
     if compiler_name == "msvc":
-        if not IS_WINDOWS or not has_visual_studio():
+        if not preferred_gen:
             print("msvc skipped (Visual Studio not available)")
             continue
-        generator = "Visual Studio 17 2022"
+        print(f"Using msvc: {preferred_gen}")
+        generator = preferred_gen
     else:
         generator = get_generator(preferred_gen)
 
-    for std, opt in tests:
+    runs = [(std, opt, None, []) for std, opt in tests]
+    runs += [
+        (std, opt, tag, defines)
+        for name, std, opt, tag, defines in extra_tests
+        if name == compiler_name
+    ]
+
+    for std, opt, tag, defines in runs:
+
+        if compiler_name == "msvc" and std == "c99":
+            print("msvc c99 skipped (MSVC has no C99 mode)")
+            continue
 
         opt_tag = opt.replace("-", "O")
 
         key = f"{compiler_name}-{std}-{opt}"
+        if tag:
+            key += f"-{tag}"
+            opt_tag += f"-{tag}"
 
         build_dir = os.path.join(
             BUILD_ROOT,
@@ -147,20 +210,28 @@ for compiler_name, compiler, preferred_gen in configs:
         if compiler:
             cmake_cmd.append(f"-DCMAKE_C_COMPILER={compiler}")
 
+        if defines:
+            flags = " ".join(f"-D{d}" for d in defines)
+            cmake_cmd.append(f"-DCMAKE_C_FLAGS={flags}")
+
         if SANITIZERS:
             cmake_cmd.append(f"-DSANITIZERS={SANITIZERS}")
 
-        run(cmake_cmd)
-
-        # -----------------------------
-        # Build
-        # -----------------------------
         build_cmd = ["cmake", "--build", build_dir]
 
         if generator.startswith("Visual Studio"):
             build_cmd += ["--config", "Release"]
 
-        run(build_cmd)
+        # -----------------------------
+        # Configure + build (a failure is recorded, not fatal)
+        # -----------------------------
+        try:
+            run(cmake_cmd)
+            run(build_cmd)
+        except subprocess.CalledProcessError:
+            failures.append((key, "configure/build failed"))
+            print(f"FAIL: {key} (configure/build failed)")
+            continue
 
         # -----------------------------
         # Executable path
@@ -172,7 +243,7 @@ for compiler_name, compiler, preferred_gen in configs:
 
         if not os.path.exists(exe):
             print(f"Missing executable: {exe}")
-            failures.append((key, -1))
+            failures.append((key, "missing executable"))
             continue
 
         # -----------------------------
@@ -181,7 +252,7 @@ for compiler_name, compiler, preferred_gen in configs:
         code = run_exe(exe)
 
         if code != 0:
-            failures.append((key, code))
+            failures.append((key, f"exit code {code}"))
             print(f"FAIL: {key} (exit {code})")
         else:
             successes.append(key)
@@ -202,8 +273,8 @@ else:
 
 print("\nFailures:")
 if failures:
-    for name, code in failures:
-        print(f"  {name} -> exit code {code}")
+    for name, reason in failures:
+        print(f"  {name} -> {reason}")
 else:
     print("  None")
 

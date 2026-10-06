@@ -23,8 +23,8 @@
     do { fprintf(stderr, "[CONCURRENCY] NULLPTR: %s\n", msg); } while (0)
 #endif
 
-#define USE_C11_THREADING 0 // Set to 1 to use C11 threads and atomics, otherwise will use platform-specific backends (Win / pthreads)
-#if USE_C11_THREADING
+#define PW_USE_C11_THREADING 0 // Set to 1 to use C11 threads and atomics, otherwise will use platform-specific backends (Win / pthreads)
+#if PW_USE_C11_THREADING
     #define IC_USE_C11_THREADS_AND_ATOMICS
 #endif
 
@@ -36,171 +36,171 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-IC_HEADER_FUNC Error concurrency_result_to_error(const int concurrency_result)
+IC_HEADER_FUNC AppError pw_concurrency_result_to_error(const int concurrency_result)
 {
     switch (concurrency_result)
     {
-        case IC_CONCURRENCY_OK: return Error_NoError;
-        case IC_CONCURRENCY_NULLREF: return Error_NullRef;
-        case IC_CONCURRENCY_FAILURE: return Error_Runtime;
-        case IC_CONCURRENCY_ALREADY_JOINED: return Error_InvalidState;
-        case IC_CONCURRENCY_ALREADY_LOCKED: return Error_InvalidState;
-        default: return Error_Unknown;
+        case IC_CONCURRENCY_OK: return AppError_NoError;
+        case IC_CONCURRENCY_NULLREF: return AppError_NullRef;
+        case IC_CONCURRENCY_FAILURE: return AppError_Runtime;
+        case IC_CONCURRENCY_ALREADY_JOINED: return AppError_InvalidState;
+        case IC_CONCURRENCY_ALREADY_LOCKED: return AppError_InvalidState;
+        default: return AppError_Unknown;
     }
 }
 
 // SLEEP API
-IC_HEADER_FUNC void thread_sleep_milliseconds(const int32_t milliseconds)               { ic_thread_sleep(milliseconds); }
+IC_HEADER_FUNC void pw_thread_sleep_milliseconds(const int32_t milliseconds)    { ic_thread_sleep(milliseconds); }
 
 // ATOMIC API
-typedef ic_atomic_i32 AtomicI32;
-IC_HEADER_FUNC Error atomic_init(AtomicI32* const out_atom, const int32_t value)        { return concurrency_result_to_error(ic_atomic_init(out_atom, value)); }
-IC_HEADER_FUNC AtomicI32 atomic_make(const int32_t value)                               { return ic_make_atomic(value); }
-IC_HEADER_FUNC int32_t atomic_load(const AtomicI32* const atom)                         { return ic_atomic_load(atom); }
-IC_HEADER_FUNC void atomic_store(AtomicI32* const atom, const int32_t value)            { ic_atomic_store(atom, value); }
-IC_HEADER_FUNC int32_t atomic_fetch_add(AtomicI32* const atom, const int32_t value)     { return ic_atomic_fetch_add(atom, value); }
-IC_HEADER_FUNC int32_t atomic_exchange(AtomicI32* const atom, const int32_t value)      { return ic_atomic_exchange(atom, value); }
+typedef ic_atomic_i32 PwAtomicI32;
+IC_HEADER_FUNC AppError pw_atomic_init(PwAtomicI32* const out_atom, const int32_t value)    { return pw_concurrency_result_to_error(ic_atomic_init(out_atom, value)); }
+IC_HEADER_FUNC PwAtomicI32 pw_atomic_make(const int32_t value)                              { return ic_make_atomic(value); }
+IC_HEADER_FUNC int32_t pw_atomic_load(const PwAtomicI32* const atom)                        { return ic_atomic_load(atom); }
+IC_HEADER_FUNC void pw_atomic_store(PwAtomicI32* const atom, const int32_t value)           { ic_atomic_store(atom, value); }
+IC_HEADER_FUNC int32_t pw_atomic_fetch_add(PwAtomicI32* const atom, const int32_t value)    { return ic_atomic_fetch_add(atom, value); }
+IC_HEADER_FUNC int32_t pw_atomic_exchange(PwAtomicI32* const atom, const int32_t value)     { return ic_atomic_exchange(atom, value); }
 
 // TASK API
-typedef ic_task Task;
-typedef ic_task_function TaskFunction;
-IC_HEADER_FUNC Error task_init(Task* const out_task, const TaskFunction function, void* const arg)  { return concurrency_result_to_error(ic_task_init(out_task, function, arg)); }
-IC_HEADER_FUNC bool task_is_running(const Task* const task)                                         { return (bool)ic_task_is_running(task); }
-IC_HEADER_FUNC Error task_get_result(const Task* const task, int* const out_result)                 { return concurrency_result_to_error(ic_task_get_result(task, out_result)); }
-IC_HEADER_FUNC Error task_join(Task* const task)                                                    { return concurrency_result_to_error(ic_task_join(task)); }
+typedef ic_task PwTask;
+typedef ic_task_function PwTaskFunction;
+IC_HEADER_FUNC AppError pw_task_init(PwTask* const out_task, const PwTaskFunction function, void* const arg)    { return pw_concurrency_result_to_error(ic_task_init(out_task, function, arg)); }
+IC_HEADER_FUNC bool pw_task_is_running(const PwTask* const task)                                                { return (bool)ic_task_is_running(task); }
+IC_HEADER_FUNC AppError pw_task_get_result(const PwTask* const task, int* const out_result)                     { return pw_concurrency_result_to_error(ic_task_get_result(task, out_result)); }
+IC_HEADER_FUNC AppError pw_task_join(PwTask* const task)                                                        { return pw_concurrency_result_to_error(ic_task_join(task)); }
 
 // MUTEX API
-typedef ic_mutex Mutex;
-IC_HEADER_FUNC Error mutex_init(Mutex* const out_mutex)         { return concurrency_result_to_error(ic_mutex_init(out_mutex)); }
-IC_HEADER_FUNC void mutex_lock(Mutex* const mutex)              { ic_mutex_lock(mutex); } 
-IC_HEADER_FUNC Error mutex_trylock(Mutex* const mutex)          { return concurrency_result_to_error(ic_mutex_trylock(mutex)); }
-IC_HEADER_FUNC void mutex_unlock(Mutex* const mutex)            { ic_mutex_unlock(mutex); }
-IC_HEADER_FUNC Error mutex_destroy(Mutex* const mutex)          { return concurrency_result_to_error(ic_mutex_destroy(mutex)); }
+typedef ic_mutex PwMutex;
+IC_HEADER_FUNC AppError pw_mutex_init(PwMutex* const out_mutex)    { return pw_concurrency_result_to_error(ic_mutex_init(out_mutex)); }
+IC_HEADER_FUNC void pw_mutex_lock(PwMutex* const mutex)            { ic_mutex_lock(mutex); }
+IC_HEADER_FUNC AppError pw_mutex_trylock(PwMutex* const mutex)     { return pw_concurrency_result_to_error(ic_mutex_trylock(mutex)); }
+IC_HEADER_FUNC void pw_mutex_unlock(PwMutex* const mutex)          { ic_mutex_unlock(mutex); }
+IC_HEADER_FUNC AppError pw_mutex_destroy(PwMutex* const mutex)     { return pw_concurrency_result_to_error(ic_mutex_destroy(mutex)); }
 
 // CONDITION VARIABLE API
-typedef ic_condition_variable ConditionVariable;
-IC_HEADER_FUNC Error condition_variable_init(ConditionVariable* const cv)                       { return concurrency_result_to_error(ic_condition_variable_init(cv)); }
-IC_HEADER_FUNC Error condition_variable_notify_one(ConditionVariable* const cv)                 { return concurrency_result_to_error(ic_condition_variable_notify_one(cv)); }
-IC_HEADER_FUNC Error condition_variable_notify_all(ConditionVariable* const cv)                 { return concurrency_result_to_error(ic_condition_variable_notify_all(cv)); }
-IC_HEADER_FUNC Error condition_variable_wait(ConditionVariable* const cv, Mutex* const mutex)   { return concurrency_result_to_error(ic_condition_variable_wait(cv, mutex)); }
-IC_HEADER_FUNC Error condition_variable_destroy(ConditionVariable* const cv)                    { return concurrency_result_to_error(ic_condition_variable_destroy(cv)); }
+typedef ic_condition_variable PwConditionVariable;
+IC_HEADER_FUNC AppError pw_condition_variable_init(PwConditionVariable* const cv)                          { return pw_concurrency_result_to_error(ic_condition_variable_init(cv)); }
+IC_HEADER_FUNC AppError pw_condition_variable_notify_one(PwConditionVariable* const cv)                    { return pw_concurrency_result_to_error(ic_condition_variable_notify_one(cv)); }
+IC_HEADER_FUNC AppError pw_condition_variable_notify_all(PwConditionVariable* const cv)                    { return pw_concurrency_result_to_error(ic_condition_variable_notify_all(cv)); }
+IC_HEADER_FUNC AppError pw_condition_variable_wait(PwConditionVariable* const cv, PwMutex* const mutex)    { return pw_concurrency_result_to_error(ic_condition_variable_wait(cv, mutex)); }
+IC_HEADER_FUNC AppError pw_condition_variable_destroy(PwConditionVariable* const cv)                       { return pw_concurrency_result_to_error(ic_condition_variable_destroy(cv)); }
 
 // GATE API
-typedef ic_gate Gate;
-IC_HEADER_FUNC Error gate_init(Gate* const out_gate)            { return concurrency_result_to_error(ic_gate_init(out_gate)); }
-IC_HEADER_FUNC Error gate_wait(Gate* const gate)                { return concurrency_result_to_error(ic_gate_wait(gate)); }
-IC_HEADER_FUNC Error gate_signal_one(Gate* const gate)          { return concurrency_result_to_error(ic_gate_signal_one(gate)); }
-IC_HEADER_FUNC Error gate_destroy(Gate* const gate)             { return concurrency_result_to_error(ic_gate_destroy(gate)); }
+typedef ic_gate PwGate;
+IC_HEADER_FUNC AppError pw_gate_init(PwGate* const out_gate)      { return pw_concurrency_result_to_error(ic_gate_init(out_gate)); }
+IC_HEADER_FUNC AppError pw_gate_wait(PwGate* const gate)          { return pw_concurrency_result_to_error(ic_gate_wait(gate)); }
+IC_HEADER_FUNC AppError pw_gate_signal_one(PwGate* const gate)    { return pw_concurrency_result_to_error(ic_gate_signal_one(gate)); }
+IC_HEADER_FUNC AppError pw_gate_destroy(PwGate* const gate)       { return pw_concurrency_result_to_error(ic_gate_destroy(gate)); }
 
 // BROADCAST API
-typedef ic_broadcast Broadcast;
-IC_HEADER_FUNC Error broadcast_init(Broadcast* const out_broadcast)             { return concurrency_result_to_error(ic_broadcast_init(out_broadcast)); }
-IC_HEADER_FUNC Error broadcast_wait(Broadcast* const broadcast)                 { return concurrency_result_to_error(ic_broadcast_wait(broadcast)); }
-IC_HEADER_FUNC Error broadcast_signal_all(Broadcast* const broadcast)           { return concurrency_result_to_error(ic_broadcast_signal_all(broadcast)); }
-IC_HEADER_FUNC Error broadcast_reset(Broadcast* const broadcast)                { return concurrency_result_to_error(ic_broadcast_reset(broadcast)); }
-IC_HEADER_FUNC Error broadcast_destroy(Broadcast* const broadcast)              { return concurrency_result_to_error(ic_broadcast_destroy(broadcast)); }
+typedef ic_broadcast PwBroadcast;
+IC_HEADER_FUNC AppError pw_broadcast_init(PwBroadcast* const out_broadcast)      { return pw_concurrency_result_to_error(ic_broadcast_init(out_broadcast)); }
+IC_HEADER_FUNC AppError pw_broadcast_wait(PwBroadcast* const broadcast)          { return pw_concurrency_result_to_error(ic_broadcast_wait(broadcast)); }
+IC_HEADER_FUNC AppError pw_broadcast_signal_all(PwBroadcast* const broadcast)    { return pw_concurrency_result_to_error(ic_broadcast_signal_all(broadcast)); }
+IC_HEADER_FUNC AppError pw_broadcast_reset(PwBroadcast* const broadcast)         { return pw_concurrency_result_to_error(ic_broadcast_reset(broadcast)); }
+IC_HEADER_FUNC AppError pw_broadcast_destroy(PwBroadcast* const broadcast)       { return pw_concurrency_result_to_error(ic_broadcast_destroy(broadcast)); }
 
 // TASK POOL API
 
-// typedef struct TaskPool TaskPool;
-// typedef void (*TaskPoolFunction)(void* arg);
-// #ifndef TASKPOOL_MAX_THREADS
-// #ifndef TASKPOOL_MAX_PENDING_TASKS
-// Error task_pool_init(TaskPool* const out_pool, const uint32_t worker_count);
-// Error task_pool_submit(TaskPool* const pool, const TaskPoolFunction func, void* const arg, TaskCompletion* const out_completion);
-// Error task_pool_destroy(TaskPool* const pool);
+// typedef struct PwTaskPool PwTaskPool;
+// typedef void (*PwTaskPoolFunction)(void* arg);
+// #ifndef PW_TASKPOOL_MAX_THREADS
+// #ifndef PW_TASKPOOL_MAX_PENDING_TASKS
+// AppError pw_task_pool_init(PwTaskPool* const out_pool, const uint32_t worker_count);
+// AppError pw_task_pool_submit(PwTaskPool* const pool, const PwTaskPoolFunction func, void* const arg, PwTaskCompletion* const out_completion);
+// AppError pw_task_pool_destroy(PwTaskPool* const pool);
 
-// typedef struct TaskCompletion TaskCompletion;
-// Error task_completion_wait(const TaskCompletion* const completion, const int32_t retry_period_ms, const int64_t timeout_ms);
+// typedef struct PwTaskCompletion PwTaskCompletion;
+// AppError pw_task_completion_wait(const PwTaskCompletion* const completion, const int32_t retry_period_ms, const int64_t timeout_ms);
 
 // ==============================================================================
 // TASK POOL IMPLEMENTATION
 // ==============================================================================
 
-#ifndef TASKPOOL_MAX_THREADS
-#define TASKPOOL_MAX_THREADS 8
+#ifndef PW_TASKPOOL_MAX_THREADS
+#define PW_TASKPOOL_MAX_THREADS 8
 #endif
 
-#ifndef TASKPOOL_MAX_PENDING_TASKS
-#define TASKPOOL_MAX_PENDING_TASKS 1024
+#ifndef PW_TASKPOOL_MAX_PENDING_TASKS
+#define PW_TASKPOOL_MAX_PENDING_TASKS 1024
 #endif
 
-typedef void (*TaskPoolFunction)(void* arg);
+typedef void (*PwTaskPoolFunction)(void* arg);
 
-typedef enum TaskPoolState
+typedef enum PwTaskPoolState
 {
-    TASKPOOL_RUNNING = 0,
-    TASKPOOL_CLOSING_DRAIN = 1,
-    TASKPOOL_CLOSING_ABORT = 2
+    PW_TASKPOOL_RUNNING = 0,
+    PW_TASKPOOL_CLOSING_DRAIN = 1,
+    PW_TASKPOOL_CLOSING_ABORT = 2
 
-} TaskPoolState;
+} PwTaskPoolState;
 
-typedef struct TaskCompletion
+typedef struct PwTaskCompletion
 {
-    AtomicI32 PRIVATE_completed;
+    PwAtomicI32 PRIVATE_completed;
 
-} TaskCompletion;
+} PwTaskCompletion;
 
-typedef struct TaskPoolJob
+typedef struct PwTaskPoolJob
 {
-    TaskPoolFunction PRIVATE_func;
+    PwTaskPoolFunction PRIVATE_func;
     void* PRIVATE_arg;
-    TaskCompletion* PRIVATE_completion;
+    PwTaskCompletion* PRIVATE_completion;
 
-} TaskPoolJob;
+} PwTaskPoolJob;
 
-typedef struct TaskPool
+typedef struct PwTaskPool
 {
-    Task PRIVATE_workers[TASKPOOL_MAX_THREADS];
+    PwTask PRIVATE_workers[PW_TASKPOOL_MAX_THREADS];
     uint32_t PRIVATE_worker_count;
 
-    Mutex PRIVATE_mutex;
-    Gate PRIVATE_work_gate;
+    PwMutex PRIVATE_mutex;
+    PwGate PRIVATE_work_gate;
 
-    AtomicI32 PRIVATE_state;
-    AtomicI32 PRIVATE_active_jobs;
+    PwAtomicI32 PRIVATE_state;
+    PwAtomicI32 PRIVATE_active_jobs;
 
-    TaskPoolJob PRIVATE_jobs[TASKPOOL_MAX_PENDING_TASKS];
+    PwTaskPoolJob PRIVATE_jobs[PW_TASKPOOL_MAX_PENDING_TASKS];
 
     uint32_t PRIVATE_head;
     uint32_t PRIVATE_tail;
     uint32_t PRIVATE_count;
 
-} TaskPool;
+} PwTaskPool;
 
 // ==============================================================================
 // INTERNAL WORKER
 // ==============================================================================
 
-static int PRIVATE_task_pool_worker_main(void* arg)
+static int PRIVATE_pw_task_pool_worker_main(void* arg)
 {
-    TaskPool* p = (TaskPool*)arg;
+    PwTaskPool* p = (PwTaskPool*)arg;
 
     while (1)
     {
-        if (!Error_eq(gate_wait(&p->PRIVATE_work_gate), Error_NoError))
+        if (!AppError_eq(pw_gate_wait(&p->PRIVATE_work_gate), AppError_NoError))
         {
             continue;
         }
 
-        mutex_lock(&p->PRIVATE_mutex);
+        pw_mutex_lock(&p->PRIVATE_mutex);
 
-        const int32_t state = atomic_load(&p->PRIVATE_state);
+        const int32_t state = pw_atomic_load(&p->PRIVATE_state);
 
         // Abort mode ignores remaining queued jobs immediately
-        if (state == TASKPOOL_CLOSING_ABORT)
+        if (state == PW_TASKPOOL_CLOSING_ABORT)
         {
-            mutex_unlock(&p->PRIVATE_mutex);
+            pw_mutex_unlock(&p->PRIVATE_mutex);
             break;
         }
 
         // No queued jobs available
         if (p->PRIVATE_count == 0)
         {
-            mutex_unlock(&p->PRIVATE_mutex);
+            pw_mutex_unlock(&p->PRIVATE_mutex);
 
             // Drain mode exits once queue becomes empty
-            if (state == TASKPOOL_CLOSING_DRAIN)
+            if (state == PW_TASKPOOL_CLOSING_DRAIN)
             {
                 break;
             }
@@ -208,28 +208,28 @@ static int PRIVATE_task_pool_worker_main(void* arg)
             continue;
         }
 
-        TaskPoolJob job = p->PRIVATE_jobs[p->PRIVATE_head];
+        PwTaskPoolJob job = p->PRIVATE_jobs[p->PRIVATE_head];
 
-        p->PRIVATE_head = (p->PRIVATE_head + 1) % TASKPOOL_MAX_PENDING_TASKS;
+        p->PRIVATE_head = (p->PRIVATE_head + 1) % PW_TASKPOOL_MAX_PENDING_TASKS;
         p->PRIVATE_count--;
 
-        atomic_fetch_add(&p->PRIVATE_active_jobs, 1);
+        pw_atomic_fetch_add(&p->PRIVATE_active_jobs, 1);
 
-        mutex_unlock(&p->PRIVATE_mutex);
+        pw_mutex_unlock(&p->PRIVATE_mutex);
 
         job.PRIVATE_func(job.PRIVATE_arg);
 
         if (job.PRIVATE_completion)
         {
-            atomic_store(&job.PRIVATE_completion->PRIVATE_completed, 1);
+            pw_atomic_store(&job.PRIVATE_completion->PRIVATE_completed, 1);
         }
 
-        (void)atomic_fetch_add(&p->PRIVATE_active_jobs, -1);
+        (void)pw_atomic_fetch_add(&p->PRIVATE_active_jobs, -1);
 
         // Wake sleeping workers during drain shutdown so they can exit
-        if (atomic_load(&p->PRIVATE_state) == TASKPOOL_CLOSING_DRAIN)
+        if (pw_atomic_load(&p->PRIVATE_state) == PW_TASKPOOL_CLOSING_DRAIN)
         {
-            gate_signal_one(&p->PRIVATE_work_gate);
+            pw_gate_signal_one(&p->PRIVATE_work_gate);
         }
     }
 
@@ -240,26 +240,26 @@ static int PRIVATE_task_pool_worker_main(void* arg)
 // COMPLETION WAIT
 // ==============================================================================
 
-#ifndef TASK_COMPLETION_WAIT_FOREVER
-#define TASK_COMPLETION_WAIT_FOREVER 0
+#ifndef PW_TASK_COMPLETION_WAIT_FOREVER
+#define PW_TASK_COMPLETION_WAIT_FOREVER 0
 #endif
 
-IC_HEADER_FUNC Error task_completion_wait(const TaskCompletion* const completion, const int32_t retry_period_ms, const int64_t timeout_ms)
+IC_HEADER_FUNC AppError pw_task_completion_wait(const PwTaskCompletion* const completion, const int32_t retry_period_ms, const int64_t timeout_ms)
 {
     if (!completion)
     {
-        IC_CONCURRENCY_NULLPTR_PANIC("task_completion_wait: completion is null");
-        return Error_NullRef;
+        IC_CONCURRENCY_NULLPTR_PANIC("pw_task_completion_wait: completion is null");
+        return AppError_NullRef;
     }
 
     if (retry_period_ms < 0)
     {
-        return Error_Argument;
+        return AppError_Argument;
     }
 
     if (timeout_ms < 0)
     {
-        return Error_Argument;
+        return AppError_Argument;
     }
 
     // -------------------------------------------------------------------------
@@ -268,9 +268,9 @@ IC_HEADER_FUNC Error task_completion_wait(const TaskCompletion* const completion
 
     for (uint32_t i = 0; i < 128; i++)
     {
-        if (atomic_load(&completion->PRIVATE_completed))
+        if (pw_atomic_load(&completion->PRIVATE_completed))
         {
-            return Error_NoError;
+            return AppError_NoError;
         }
     }
 
@@ -282,11 +282,11 @@ IC_HEADER_FUNC Error task_completion_wait(const TaskCompletion* const completion
     int64_t elapsed_ms = 0;
     int32_t current_sleep_ms = retry_period_ms;
 
-    while (!atomic_load(&completion->PRIVATE_completed))
+    while (!pw_atomic_load(&completion->PRIVATE_completed))
     {
-        thread_sleep_milliseconds(current_sleep_ms);
+        pw_thread_sleep_milliseconds(current_sleep_ms);
 
-        if (timeout_ms != TASK_COMPLETION_WAIT_FOREVER)
+        if (timeout_ms != PW_TASK_COMPLETION_WAIT_FOREVER)
         {
             // Saturating overflow-safe accumulation
             if (elapsed_ms > INT64_MAX - current_sleep_ms)
@@ -300,7 +300,7 @@ IC_HEADER_FUNC Error task_completion_wait(const TaskCompletion* const completion
 
             if (elapsed_ms >= timeout_ms)
             {
-                return Error_Timeout;
+                return AppError_Timeout;
             }
         }
 
@@ -320,24 +320,24 @@ IC_HEADER_FUNC Error task_completion_wait(const TaskCompletion* const completion
         }
     }
 
-    return Error_NoError;
+    return AppError_NoError;
 }
 
 // ==============================================================================
 // INIT
 // ==============================================================================
 
-IC_HEADER_FUNC Error task_pool_init(TaskPool* const out_pool, uint32_t worker_count)
+IC_HEADER_FUNC AppError pw_task_pool_init(PwTaskPool* const out_pool, uint32_t worker_count)
 {
     if (!out_pool)
     {
-        IC_CONCURRENCY_NULLPTR_PANIC("task_pool_init: out_pool is null");
-        return Error_NullRef;
+        IC_CONCURRENCY_NULLPTR_PANIC("pw_task_pool_init: out_pool is null");
+        return AppError_NullRef;
     }
 
-    if (worker_count == 0 || worker_count > TASKPOOL_MAX_THREADS)
+    if (worker_count == 0 || worker_count > PW_TASKPOOL_MAX_THREADS)
     {
-        return Error_Argument;
+        return AppError_Argument;
     }
 
     out_pool->PRIVATE_worker_count = worker_count;
@@ -346,105 +346,105 @@ IC_HEADER_FUNC Error task_pool_init(TaskPool* const out_pool, uint32_t worker_co
     out_pool->PRIVATE_tail = 0;
     out_pool->PRIVATE_count = 0;
 
-    atomic_store(&out_pool->PRIVATE_state, TASKPOOL_RUNNING);
-    atomic_store(&out_pool->PRIVATE_active_jobs, 0);
+    pw_atomic_store(&out_pool->PRIVATE_state, PW_TASKPOOL_RUNNING);
+    pw_atomic_store(&out_pool->PRIVATE_active_jobs, 0);
 
-    Error err = mutex_init(&out_pool->PRIVATE_mutex);
+    AppError err = pw_mutex_init(&out_pool->PRIVATE_mutex);
 
-    if (!Error_eq(err, Error_NoError))
+    if (!AppError_eq(err, AppError_NoError))
     {
         return err;
     }
 
-    err = gate_init(&out_pool->PRIVATE_work_gate);
+    err = pw_gate_init(&out_pool->PRIVATE_work_gate);
 
-    if (!Error_eq(err, Error_NoError))
+    if (!AppError_eq(err, AppError_NoError))
     {
-        mutex_destroy(&out_pool->PRIVATE_mutex);
+        pw_mutex_destroy(&out_pool->PRIVATE_mutex);
         return err;
     }
 
     for (uint32_t i = 0; i < worker_count; i++)
     {
-        err = task_init(&out_pool->PRIVATE_workers[i], PRIVATE_task_pool_worker_main, out_pool);
+        err = pw_task_init(&out_pool->PRIVATE_workers[i], PRIVATE_pw_task_pool_worker_main, out_pool);
 
-        if (!Error_eq(err, Error_NoError))
+        if (!AppError_eq(err, AppError_NoError))
         {
-            atomic_store(&out_pool->PRIVATE_state, TASKPOOL_CLOSING_ABORT);
+            pw_atomic_store(&out_pool->PRIVATE_state, PW_TASKPOOL_CLOSING_ABORT);
 
             for (uint32_t j = 0; j < worker_count; j++)
             {
-                (void)gate_signal_one(&out_pool->PRIVATE_work_gate);
+                (void)pw_gate_signal_one(&out_pool->PRIVATE_work_gate);
             }
 
             for (uint32_t j = 0; j < i; j++)
             {
-                (void)task_join(&out_pool->PRIVATE_workers[j]);
+                (void)pw_task_join(&out_pool->PRIVATE_workers[j]);
             }
 
-            (void)gate_destroy(&out_pool->PRIVATE_work_gate);
-            (void)mutex_destroy(&out_pool->PRIVATE_mutex);
+            (void)pw_gate_destroy(&out_pool->PRIVATE_work_gate);
+            (void)pw_mutex_destroy(&out_pool->PRIVATE_mutex);
 
             return err;
         }
     }
 
-    return Error_NoError;
+    return AppError_NoError;
 }
 
 // ==============================================================================
 // CLOSE MODE ENUM
 // ==============================================================================
 
-#define TASK_POOL_CLOSE_LIST(X, Type) \
+#define PW_TASK_POOL_CLOSE_LIST(X, Type) \
     X(Type, Drain, 0, "Finish queued and active tasks") \
     X(Type, Abort, 1, "Finish only active tasks")
 
-IC_TYPENUM_FULL(TaskPoolClose, uint8_t, TASK_POOL_CLOSE_LIST)
+IC_TYPENUM_FULL(PwTaskPoolClose, uint8_t, PW_TASK_POOL_CLOSE_LIST)
 
 // ==============================================================================
 // CLOSE
 // ==============================================================================
 
-IC_HEADER_FUNC Error task_pool_close(TaskPool* const pool, const TaskPoolClose close_mode, const int64_t timeout_ms)
+IC_HEADER_FUNC AppError pw_task_pool_close(PwTaskPool* const pool, const PwTaskPoolClose close_mode, const int64_t timeout_ms)
 {
     if (!pool)
     {
-        IC_CONCURRENCY_NULLPTR_PANIC("task_pool_close: pool is null");
-        return Error_NullRef;
+        IC_CONCURRENCY_NULLPTR_PANIC("pw_task_pool_close: pool is null");
+        return AppError_NullRef;
     }
 
-    if (timeout_ms < 0 && timeout_ms != TASK_COMPLETION_WAIT_FOREVER)
+    if (timeout_ms < 0 && timeout_ms != PW_TASK_COMPLETION_WAIT_FOREVER)
     {
-        return Error_Argument;
+        return AppError_Argument;
     }
 
     int32_t set_state = -1;
 
-    if (TaskPoolClose_eq(close_mode, TaskPoolClose_Drain))
+    if (PwTaskPoolClose_eq(close_mode, PwTaskPoolClose_Drain))
     {
-        if (atomic_load(&pool->PRIVATE_state) == TASKPOOL_CLOSING_ABORT)
+        if (pw_atomic_load(&pool->PRIVATE_state) == PW_TASKPOOL_CLOSING_ABORT)
         {
-            return Error_InvalidState;
+            return AppError_InvalidState;
         }
 
-        set_state = TASKPOOL_CLOSING_DRAIN;
+        set_state = PW_TASKPOOL_CLOSING_DRAIN;
     }
-    else if (TaskPoolClose_eq(close_mode, TaskPoolClose_Abort))
+    else if (PwTaskPoolClose_eq(close_mode, PwTaskPoolClose_Abort))
     {
-        set_state = TASKPOOL_CLOSING_ABORT;
+        set_state = PW_TASKPOOL_CLOSING_ABORT;
     }
     else
     {
-        return Error_Argument;
+        return AppError_Argument;
     }
 
-    atomic_store(&pool->PRIVATE_state, set_state);
+    pw_atomic_store(&pool->PRIVATE_state, set_state);
 
     for (uint32_t i = 0; i < pool->PRIVATE_worker_count; i++)
     {
-        const Error res = gate_signal_one(&pool->PRIVATE_work_gate);
-        if (!Error_eq(res, Error_NoError))
+        const AppError res = pw_gate_signal_one(&pool->PRIVATE_work_gate);
+        if (!AppError_eq(res, AppError_NoError))
         {
             return res;
         }
@@ -457,26 +457,26 @@ IC_HEADER_FUNC Error task_pool_close(TaskPool* const pool, const TaskPoolClose c
     uint32_t sleep_ms = 1;
     int64_t elapsed_ms = 0;
 
-    if (set_state == TASKPOOL_CLOSING_DRAIN)
+    if (set_state == PW_TASKPOOL_CLOSING_DRAIN)
     {
         while (1)
         {
-            mutex_lock(&pool->PRIVATE_mutex);
+            pw_mutex_lock(&pool->PRIVATE_mutex);
 
             const uint32_t queued = pool->PRIVATE_count;
 
-            mutex_unlock(&pool->PRIVATE_mutex);
+            pw_mutex_unlock(&pool->PRIVATE_mutex);
 
-            const int32_t active = atomic_load(&pool->PRIVATE_active_jobs);
+            const int32_t active = pw_atomic_load(&pool->PRIVATE_active_jobs);
 
             if (queued == 0 && active == 0)
             {
                 break;
             }
 
-            thread_sleep_milliseconds(sleep_ms);
+            pw_thread_sleep_milliseconds(sleep_ms);
 
-            if (timeout_ms != TASK_COMPLETION_WAIT_FOREVER)
+            if (timeout_ms != PW_TASK_COMPLETION_WAIT_FOREVER)
             {
                 if (elapsed_ms > INT64_MAX - sleep_ms)
                 {
@@ -489,7 +489,7 @@ IC_HEADER_FUNC Error task_pool_close(TaskPool* const pool, const TaskPoolClose c
 
                 if (elapsed_ms >= timeout_ms)
                 {
-                    return Error_Timeout;
+                    return AppError_Timeout;
                 }
             }
 
@@ -501,11 +501,11 @@ IC_HEADER_FUNC Error task_pool_close(TaskPool* const pool, const TaskPoolClose c
     }
     else
     {
-        while (atomic_load(&pool->PRIVATE_active_jobs) != 0)
+        while (pw_atomic_load(&pool->PRIVATE_active_jobs) != 0)
         {
-            thread_sleep_milliseconds(sleep_ms);
+            pw_thread_sleep_milliseconds(sleep_ms);
 
-            if (timeout_ms != TASK_COMPLETION_WAIT_FOREVER)
+            if (timeout_ms != PW_TASK_COMPLETION_WAIT_FOREVER)
             {
                 if (elapsed_ms > INT64_MAX - sleep_ms)
                 {
@@ -518,7 +518,7 @@ IC_HEADER_FUNC Error task_pool_close(TaskPool* const pool, const TaskPoolClose c
 
                 if (elapsed_ms >= timeout_ms)
                 {
-                    return Error_Timeout;
+                    return AppError_Timeout;
                 }
             }
 
@@ -535,101 +535,101 @@ IC_HEADER_FUNC Error task_pool_close(TaskPool* const pool, const TaskPoolClose c
 
     for (uint32_t i = 0; i < pool->PRIVATE_worker_count; i++)
     {
-        const Error res = gate_signal_one(&pool->PRIVATE_work_gate);
-        if (!Error_eq(res, Error_NoError))
+        const AppError res = pw_gate_signal_one(&pool->PRIVATE_work_gate);
+        if (!AppError_eq(res, AppError_NoError))
         {
             return res;
         }
     }
 
-    return Error_NoError;
+    return AppError_NoError;
 }
 
 // ==============================================================================
 // SUBMIT
 // ==============================================================================
 
-IC_HEADER_FUNC Error task_pool_submit(TaskPool* const pool, const TaskPoolFunction func, void* const arg, TaskCompletion* const out_completion)
+IC_HEADER_FUNC AppError pw_task_pool_submit(PwTaskPool* const pool, const PwTaskPoolFunction func, void* const arg, PwTaskCompletion* const out_completion)
 {
     if (!pool || !func)
     {
-        IC_CONCURRENCY_NULLPTR_PANIC("task_pool_submit: pool or func is null");
-        return Error_NullRef;
+        IC_CONCURRENCY_NULLPTR_PANIC("pw_task_pool_submit: pool or func is null");
+        return AppError_NullRef;
     }
 
-    if (atomic_load(&pool->PRIVATE_state) != TASKPOOL_RUNNING)
+    if (pw_atomic_load(&pool->PRIVATE_state) != PW_TASKPOOL_RUNNING)
     {
-        return Error_InvalidState;
+        return AppError_InvalidState;
     }
 
     if (out_completion)
     {
-        atomic_store(&out_completion->PRIVATE_completed, 0);
+        pw_atomic_store(&out_completion->PRIVATE_completed, 0);
     }
 
-    mutex_lock(&pool->PRIVATE_mutex);
+    pw_mutex_lock(&pool->PRIVATE_mutex);
 
-    if (pool->PRIVATE_count >= TASKPOOL_MAX_PENDING_TASKS)
+    if (pool->PRIVATE_count >= PW_TASKPOOL_MAX_PENDING_TASKS)
     {
-        mutex_unlock(&pool->PRIVATE_mutex);
-        return Error_OutOfBounds;
+        pw_mutex_unlock(&pool->PRIVATE_mutex);
+        return AppError_OutOfBounds;
     }
 
-    pool->PRIVATE_jobs[pool->PRIVATE_tail] = (TaskPoolJob)
+    pool->PRIVATE_jobs[pool->PRIVATE_tail] = (PwTaskPoolJob)
     {
         .PRIVATE_func = func,
         .PRIVATE_arg = arg,
         .PRIVATE_completion = out_completion
     };
 
-    pool->PRIVATE_tail = (pool->PRIVATE_tail + 1) % TASKPOOL_MAX_PENDING_TASKS;
+    pool->PRIVATE_tail = (pool->PRIVATE_tail + 1) % PW_TASKPOOL_MAX_PENDING_TASKS;
     pool->PRIVATE_count++;
 
-    mutex_unlock(&pool->PRIVATE_mutex);
+    pw_mutex_unlock(&pool->PRIVATE_mutex);
 
-    return gate_signal_one(&pool->PRIVATE_work_gate);
+    return pw_gate_signal_one(&pool->PRIVATE_work_gate);
 }
 
 // ==============================================================================
 // DESTROY
 // ==============================================================================
 
-IC_HEADER_FUNC Error task_pool_destroy(TaskPool* const pool)
+IC_HEADER_FUNC AppError pw_task_pool_destroy(PwTaskPool* const pool)
 {
     if (!pool)
     {
-        IC_CONCURRENCY_NULLPTR_PANIC("task_pool_destroy: pool is null");
-        return Error_NullRef;
+        IC_CONCURRENCY_NULLPTR_PANIC("pw_task_pool_destroy: pool is null");
+        return AppError_NullRef;
     }
 
     const int64_t thirty_seconds = 30 * 1000;
-    Error err = task_pool_close(pool, TaskPoolClose_Abort, thirty_seconds);
-    if (!Error_eq(err, Error_NoError))
+    AppError err = pw_task_pool_close(pool, PwTaskPoolClose_Abort, thirty_seconds);
+    if (!AppError_eq(err, AppError_NoError))
     {
         return err;
     }
 
     for (uint32_t i = 0; i < pool->PRIVATE_worker_count; i++)
     {
-        err = task_join(&pool->PRIVATE_workers[i]);
+        err = pw_task_join(&pool->PRIVATE_workers[i]);
     }
-    if (!Error_eq(err, Error_NoError))
+    if (!AppError_eq(err, AppError_NoError))
     {
-        return Error_Irrecoverable;
+        return AppError_Irrecoverable;
     }
 
-    err = gate_destroy(&pool->PRIVATE_work_gate);
-    if (!Error_eq(err, Error_NoError))
+    err = pw_gate_destroy(&pool->PRIVATE_work_gate);
+    if (!AppError_eq(err, AppError_NoError))
     {
-        return Error_Irrecoverable;
+        return AppError_Irrecoverable;
     }
 
-    err = mutex_destroy(&pool->PRIVATE_mutex);
-    if (!Error_eq(err, Error_NoError))
+    err = pw_mutex_destroy(&pool->PRIVATE_mutex);
+    if (!AppError_eq(err, AppError_NoError))
     {
-        return Error_Irrecoverable;
+        return AppError_Irrecoverable;
     }
-    return Error_NoError;
+    return AppError_NoError;
 }
 
 #endif // PREMADE_PARALLEL_WORK_H

@@ -50,8 +50,8 @@ IC_STATIC_ASSERT(sizeof(int) == 4, "int must be 4 bytes");
 ```c
 // e.g. this for modern compilers
 static_assert(sizeof(int) == 4, "int must be 4 bytes");
-// or this for older (or barebone) compilers, __LINE__ = 3 in example
-typedef char static_assert_failed_at_line_3[(sizeof(int) == 4) ? 1 : -1];
+// or this for older (or barebone) compilers: a negative array size fails to compile
+extern char ic_static_assert_failed[(sizeof(int) == 4) ? 1 : -1];
 ```
 
 ## ic_inline.h
@@ -615,6 +615,8 @@ It provides:
 - `ic_broadcast` for signalling all waiters
 
 The API is designed to be minimal and predictable while hiding platform-specific threading details (C11, pthreads, or Windows).
+
+> *Note: On Linux and other POSIX systems the pthread backend uses POSIX functions such as `nanosleep`. When compiling in strict ISO mode (`-std=c99` or `-std=c11`, as opposed to the default `-std=gnu99`/`-std=gnu11`), glibc hides these declarations and the build fails with e.g. "implicit declaration of function 'nanosleep'". Define `_POSIX_C_SOURCE=200809L` for the whole build, e.g. `-D_POSIX_C_SOURCE=200809L` or `target_compile_definitions(my_app PRIVATE _POSIX_C_SOURCE=200809L)` in CMake. It must be defined before any system header is included, so a `#define` at the top of a single source file is fragile. Windows and the default GNU modes need nothing extra.*
 
 ### Why use this?
 It exists because concurrency in C is highly platform-dependent and inconsistent across compilers and operating systems. This abstraction makes it possible to write multi-threaded code using a single, unified API while preserving explicit control over behavior, with light safety features such as null checks and controlled state handling. This results in more portable, easier-to-reason-about concurrency code without introducing heavy frameworks or runtime dependencies.

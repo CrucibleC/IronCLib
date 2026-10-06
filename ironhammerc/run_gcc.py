@@ -58,7 +58,8 @@ subprocess.check_call([
     "-S", BASE_DIR,
     "-B", BUILD_DIR,
     "-G", GENERATOR,
-    "-DCMAKE_BUILD_TYPE=Release"
+    "-DC_STD=c11",
+    "-DOPT_LEVEL=-O2",
 ])
 
 # -------------------------------------------------

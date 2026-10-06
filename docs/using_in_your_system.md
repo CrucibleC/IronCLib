@@ -39,36 +39,36 @@ Create your header where all errors shall be defined. Whenever you want to add m
     X(Type, Permission, 4, "Failure due to lacking permissions") \
     X(Type, BadAlloc, 5, "Failed to allocate memory")
 
-IC_TYPENUM_FULL(Error, uint16_t, MY_APP_ERROR_LIST)
+IC_TYPENUM_FULL(AppError, uint16_t, MY_APP_ERROR_LIST)
 ```
 
-Then add your own macro that builds upon the IronC result system. `MY_APP_RESULT_TYPE(Type)` is the "real" macro which when used does the same thing as writing `IC_RESULT_TYPE(TypeResult, Type, Error)`. 
+Then add your own macro that builds upon the IronC result system. `MY_APP_RESULT_TYPE(Type)` is the "real" macro which when used does the same thing as writing `IC_RESULT_TYPE(TypeResult, Type, AppError)`. 
 
 ```c
 #include "ironclib/ic_result.h"
 
 #define RESULT_NAME_IMPL(Type) Type##Result
 #define RESULT_NAME(Type) RESULT_NAME_IMPL(Type)
-#define MY_APP_RESULT_TYPE_IMPL(Name, Type) IC_RESULT_TYPE(Name, Type, Error)
+#define MY_APP_RESULT_TYPE_IMPL(Name, Type) IC_RESULT_TYPE(Name, Type, AppError)
 #define MY_APP_RESULT_TYPE(Type) MY_APP_RESULT_TYPE_IMPL(RESULT_NAME(Type), Type)
 ```
 
 You can then in this header add the common types as well if you want. It is good to keep these ultra common types in a single place.
 
 ```c
-IC_RESULT_TYPE(CharResult, char, Error)
-IC_RESULT_TYPE(IntResult, int, Error)
-IC_RESULT_TYPE(FloatResult, float, Error)
+IC_RESULT_TYPE(CharResult, char, AppError)
+IC_RESULT_TYPE(IntResult, int, AppError)
+IC_RESULT_TYPE(FloatResult, float, AppError)
 typedef const char* StringLiteral;
 MY_APP_RESULT_TYPE(StringLiteral)
-IC_RESULT_TYPE(UI16Result, uint16_t, Error)
+IC_RESULT_TYPE(UI16Result, uint16_t, AppError)
 ```
 
 You can also add a void result type to make error handling even more uniform for void functions.
 
 ```c
 typedef struct { char _; } VoidType;
-IC_RESULT_TYPE(VoidResult, VoidType, Error)
+IC_RESULT_TYPE(VoidResult, VoidType, AppError)
 #define Result_ok VoidResult_ok((VoidType){0})
 #define Result_err(x) VoidResult_err(x)
 ```
@@ -102,7 +102,7 @@ BlockResult create_block(int h, int l, int w)
 {
     if ((h <= 0) || (l <= 0) || (w <= 0))
     {
-        return BlockResult_err(Error_Argument);
+        return BlockResult_err(AppError_Argument);
     }
 
     Block block = { .height = h, .length = l, .width = w };
@@ -444,7 +444,7 @@ SizeResult string_get_capacity(const String* const s);
 
 VoidResult foo()
 {
-    VoidResult result = Result_err(Error_Runtime);
+    VoidResult result = Result_err(AppError_Runtime);
 
     StringResult str = construct_string("Hello again");
     TRY(StringResult, str);
@@ -511,14 +511,14 @@ For simple cases, macros can act as lightweight accessors that reduce verbosity 
 #include "global_error.h"
 
 #define val(res) (res.data.value)
-#define err(res) ((const Error)(res.data.err))
+#define err(res) ((const AppError)(res.data.err))
 
 // Usage
 IntResult res = foo();
 if (res.ok) {
     bar(val(res));
 } else {
-    printf(Error_to_string(err(res)));
+    printf(AppError_to_string(err(res)));
 }
 ```
 
@@ -539,7 +539,7 @@ Standardizing result handling with macros is acceptable, but more complex constr
 #define FUNCTION_START(res_type, func_name, __VA_ARGS__) \
     res_type func_name(...)                              \
     {                                                    \
-        res_type RESULT = res_type##_err(Error_Runtime); \
+        res_type RESULT = res_type##_err(AppError_Runtime); \
         do                                               
 
 #define FUNCTION_END(cleanup_expr)                       \ 
@@ -581,23 +581,23 @@ Thread pools primarily improve performance by reusing a fixed set of threads ins
 ### Premade
 A header is [provided here](premade/parallel_work.h) that has already wrapped the concurrency implementation. It also contains a thread pool implementation.
 
-### Convert to Error
+### Convert to AppError
 Begin by writing a function that translates integer results into the global errors.
 
 ```c
 #include "ironclib/ic_inline.h"
 #include "global_error.h"
 
-IC_HEADER_FUNC Error concurrency_result_to_error(const int concurrency_result)
+IC_HEADER_FUNC AppError pw_concurrency_result_to_error(const int concurrency_result)
 {
     switch (concurrency_result)
     {
-        case IC_CONCURRENCY_OK: return Error_NoError;
-        case IC_CONCURRENCY_NULLREF: return Error_NullRef;
-        case IC_CONCURRENCY_FAILURE: return Error_Runtime;
-        case IC_CONCURRENCY_ALREADY_JOINED: return Error_InvalidState;
-        case IC_CONCURRENCY_ALREADY_LOCKED: return Error_InvalidState;
-        default: return Error_Unknown;
+        case IC_CONCURRENCY_OK: return AppError_NoError;
+        case IC_CONCURRENCY_NULLREF: return AppError_NullRef;
+        case IC_CONCURRENCY_FAILURE: return AppError_Runtime;
+        case IC_CONCURRENCY_ALREADY_JOINED: return AppError_InvalidState;
+        case IC_CONCURRENCY_ALREADY_LOCKED: return AppError_InvalidState;
+        default: return AppError_Unknown;
     }
 }
 ```
@@ -609,51 +609,53 @@ Add typedefs for the IronC concurrency types (or even wrap them in structs), the
 #include "ironclib/ic_concurrency.h"
 
 // MUTEX API
-typedef ic_mutex Mutex;
-IC_HEADER_FUNC Error mutex_init(Mutex* const out_mutex) { return concurrency_result_to_error(ic_mutex_init(out_mutex)); }
-IC_HEADER_FUNC Error mutex_trylock(Mutex* const mutex) { return concurrency_result_to_error(ic_mutex_trylock(mutex)); }
+typedef ic_mutex PwMutex;
+IC_HEADER_FUNC AppError pw_mutex_init(PwMutex* const out_mutex) { return pw_concurrency_result_to_error(ic_mutex_init(out_mutex)); }
+IC_HEADER_FUNC AppError pw_mutex_trylock(PwMutex* const mutex) { return pw_concurrency_result_to_error(ic_mutex_trylock(mutex)); }
 ```
 
-If the code-base uses result values then replacing `Error` with `VoidResult` is perfectly valid and can even work better in making the system feel more uniform (and will support the same try-propagation of errors).
+Give the wrappers a prefix of their own (the premade header uses `Pw` for types and `pw_` for functions). Short generic names clash easily: C11's `<stdatomic.h>` defines `atomic_load`, `atomic_store` etc. as macros, and the C standard reserves all names starting with `atomic_` for it, so unprefixed wrappers such as `atomic_load` break as soon as the C11 backend (`IC_USE_C11_THREADS_AND_ATOMICS`) is enabled.
+
+If the code-base uses result values then replacing `AppError` with `VoidResult` is perfectly valid and can even work better in making the system feel more uniform (and will support the same try-propagation of errors).
 
 > *Note: Do not wrap concurrency types in result types or opaque structs, as this will require disciplined knowledge of concurrency and the implementation of e.g. atomics, mutexes, and threads for all supported, and future supported, platforms.*
 
 ### Implement thread pool
-A thread pool can be built on top of the wrapped concurrency API by combining a fixed set of worker threads, a shared work queue, a mutex, and a signaling primitive such as `Gate`. The important idea is that threads are created once during initialization and then continuously wait for work instead of repeatedly being created and destroyed.
+A thread pool can be built on top of the wrapped concurrency API by combining a fixed set of worker threads, a shared work queue, a mutex, and a signaling primitive such as `PwGate`. The important idea is that threads are created once during initialization and then continuously wait for work instead of repeatedly being created and destroyed.
 
-The provided implementation `TaskPool` uses a bounded ring-buffer queue protected by a mutex:
+The provided implementation `PwTaskPool` uses a bounded ring-buffer queue protected by a mutex:
 
 ```c
-typedef struct TaskPool
+typedef struct PwTaskPool
 {
-    Task PRIVATE_workers[TASKPOOL_MAX_THREADS];
+    PwTask PRIVATE_workers[PW_TASKPOOL_MAX_THREADS];
     uint32_t PRIVATE_worker_count;
 
-    Mutex PRIVATE_mutex;
-    Gate PRIVATE_work_gate;
+    PwMutex PRIVATE_mutex;
+    PwGate PRIVATE_work_gate;
 
-    AtomicI32 PRIVATE_state;
-    AtomicI32 PRIVATE_active_jobs;
+    PwAtomicI32 PRIVATE_state;
+    PwAtomicI32 PRIVATE_active_jobs;
 
-    TaskPoolJob PRIVATE_jobs[TASKPOOL_MAX_PENDING_TASKS];
+    PwTaskPoolJob PRIVATE_jobs[PW_TASKPOOL_MAX_PENDING_TASKS];
 
     uint32_t PRIVATE_head;
     uint32_t PRIVATE_tail;
     uint32_t PRIVATE_count;
 
-} TaskPool;
+} PwTaskPool;
 
 // API
-typedef struct TaskPool TaskPool;
-typedef void (*TaskPoolFunction)(void* arg);
-#define TASKPOOL_MAX_THREADS
-#define TASKPOOL_MAX_PENDING_TASKS
-Error task_pool_init(TaskPool* const out_pool, const uint32_t worker_count);
-Error task_pool_submit(TaskPool* const pool, const TaskPoolFunction func, void* const arg, TaskCompletion* const out_completion);
-Error task_pool_destroy(TaskPool* const pool);
+typedef struct PwTaskPool PwTaskPool;
+typedef void (*PwTaskPoolFunction)(void* arg);
+#define PW_TASKPOOL_MAX_THREADS
+#define PW_TASKPOOL_MAX_PENDING_TASKS
+AppError pw_task_pool_init(PwTaskPool* const out_pool, const uint32_t worker_count);
+AppError pw_task_pool_submit(PwTaskPool* const pool, const PwTaskPoolFunction func, void* const arg, PwTaskCompletion* const out_completion);
+AppError pw_task_pool_destroy(PwTaskPool* const pool);
 
-typedef struct TaskCompletion TaskCompletion;
-Error task_completion_wait(const TaskCompletion* const completion, const int32_t retry_period_ms, const int64_t timeout_ms);
+typedef struct PwTaskCompletion PwTaskCompletion;
+AppError pw_task_completion_wait(const PwTaskCompletion* const completion, const int32_t retry_period_ms, const int64_t timeout_ms);
 ```
 
 > *Note: The only safe way to make an opaque struct containing concurrency objects is with forward declaration, heap memory allocation, and implementation in source file. If heap usage is of no concern then this is a good way to hide implementation details. Here however the prefix `PRIVATE_` is used so that if a user attempts to access the fields it will look like the wrong way to use the struct (which it is).*
@@ -661,23 +663,23 @@ Error task_completion_wait(const TaskCompletion* const completion, const int32_t
 Tasks are submitted into the queue while holding the mutex:
 
 ```c
-Error task_pool_submit(TaskPool* const pool, const TaskPoolFunction func, void* const arg, TaskCompletion* const out_completion)
+AppError pw_task_pool_submit(PwTaskPool* const pool, const PwTaskPoolFunction func, void* const arg, PwTaskCompletion* const out_completion)
 {
-    mutex_lock(&pool->PRIVATE_mutex);
+    pw_mutex_lock(&pool->PRIVATE_mutex);
 
-    pool->PRIVATE_jobs[pool->PRIVATE_tail] = (TaskPoolJob)
+    pool->PRIVATE_jobs[pool->PRIVATE_tail] = (PwTaskPoolJob)
     {
         .PRIVATE_func = func,
         .PRIVATE_arg = arg,
         .PRIVATE_completion = out_completion
     };
 
-    pool->PRIVATE_tail = (pool->PRIVATE_tail + 1) % TASKPOOL_MAX_PENDING_TASKS;
+    pool->PRIVATE_tail = (pool->PRIVATE_tail + 1) % PW_TASKPOOL_MAX_PENDING_TASKS;
     pool->PRIVATE_count++;
 
-    mutex_unlock(&pool->PRIVATE_mutex);
+    pw_mutex_unlock(&pool->PRIVATE_mutex);
 
-    return gate_signal_one(&pool->PRIVATE_work_gate);
+    return pw_gate_signal_one(&pool->PRIVATE_work_gate);
 }
 ```
 
@@ -686,25 +688,25 @@ Worker threads spend most of their lifetime sleeping on the gate until work beco
 ```c
 while (1)
 {
-    if (!Error_eq(gate_wait(&p->PRIVATE_work_gate), Error_NoError))
+    if (!AppError_eq(pw_gate_wait(&p->PRIVATE_work_gate), AppError_NoError))
     {
         continue;
     }
 
-    mutex_lock(&p->PRIVATE_mutex);
+    pw_mutex_lock(&p->PRIVATE_mutex);
 
     if (p->PRIVATE_count == 0)
     {
-        mutex_unlock(&p->PRIVATE_mutex);
+        pw_mutex_unlock(&p->PRIVATE_mutex);
         continue;
     }
 
-    TaskPoolJob job = p->PRIVATE_jobs[p->PRIVATE_head];
+    PwTaskPoolJob job = p->PRIVATE_jobs[p->PRIVATE_head];
 
-    p->PRIVATE_head = (p->PRIVATE_head + 1) % TASKPOOL_MAX_PENDING_TASKS;
+    p->PRIVATE_head = (p->PRIVATE_head + 1) % PW_TASKPOOL_MAX_PENDING_TASKS;
     p->PRIVATE_count--;
 
-    mutex_unlock(&p->PRIVATE_mutex);
+    pw_mutex_unlock(&p->PRIVATE_mutex);
 
     job.PRIVATE_func(job.PRIVATE_arg);
 }
@@ -714,7 +716,7 @@ The implementation also demonstrates useful higher-level behavior that applicati
 
 Why is this not part of the library? Because the library focuses on making C a safer language to use, not provide every possible utility. Everything in the `premade` is outside the scope of the project and are examples of what IronCLib can offer. There are also many trade-offs to consider for a thread pool. Using condition variables or atomics or sleeping the thread will all have their own pros and cons for CPU, memory, and complexity, depending on if the pool expects long or short lasting tasks, or how many. Each decision creates branching paths of more decisions and complexity. For example, how should memory ownership of task arguments work? If the user should be allowed to know when the work is finished, how should the user be alerted? If via a boolean atomic, what is best method to not waste CPU and time when polling it? If via condition variable, should one be used to signal all task results or one condition variable per thread? 
 
-Managing multiple threads is not the easiest aspect of coding, yet this library has made an attempt to make it easier to do safely with clear APIs, with portability, and documentation. The `TaskPool` being discussed is also tested in [concurrency_signal_test.h](../ironhammerc/tests/concurrency_signal_test.h) in the test suite. 
+Managing multiple threads is not the easiest aspect of coding, yet this library has made an attempt to make it easier to do safely with clear APIs, with portability, and documentation. The `PwTaskPool` being discussed is also tested in [concurrency_signal_test.h](../ironhammerc/tests/concurrency_signal_test.h) in the test suite. 
 
 ### Merging gates and broadcasts
 For the future, it can be worthwhile to create wrapper of `ic_condition_variable` that merges the behavior of `ic_gate` and `ic_broadcast`. These two structs and their functions where made with safety and ease of use in mind, as well as being as lightweight as possible for this *header* library, but an event type that can both signal_one AND signal_all could definitely have use.
@@ -732,20 +734,20 @@ What is important to understand is that the gate and broadcast interfaces exist 
 IC_TYPENUM_FULL(PasspointMode, uint8_t, USE_MODE_LIST)
 
 typedef struct Passpoint {
-    ConditionVariable cv;
-    Mutex mtx;
+    PwConditionVariable cv;
+    PwMutex mtx;
     PasspointMode mode;
     uint32_t permits;   // Only counted in GATED mode, neither increase nor decrease in OPEN mode
 } Passpoint;
 
-Error passpoint_init(Passpoint* out_p);
-Error passpoint_destroy(Passpoint* p);
-Error passpoint_get_mode(Passpoint* p, PasspointMode* out_mode);
+AppError passpoint_init(Passpoint* out_p);
+AppError passpoint_destroy(Passpoint* p);
+AppError passpoint_get_mode(Passpoint* p, PasspointMode* out_mode);
 
-Error passpoint_wait(Passpoint* p);
-Error passpoint_signal_one(Passpoint* p);           // GATED: increments permit count, wakes one waiter; OPEN: no-op)
-Error passpoint_open_and_signal_all(Passpoint* p);  // GATED: wakes all and switches to OPEN (sticky); OPEN: no-op
-Error passpoint_set_gated(Passpoint* p);            // OPEN: Switch back to GATED mode (sticky), permits = 0; GATED: no-op
+AppError passpoint_wait(Passpoint* p);
+AppError passpoint_signal_one(Passpoint* p);           // GATED: increments permit count, wakes one waiter; OPEN: no-op)
+AppError passpoint_open_and_signal_all(Passpoint* p);  // GATED: wakes all and switches to OPEN (sticky); OPEN: no-op
+AppError passpoint_set_gated(Passpoint* p);            // OPEN: Switch back to GATED mode (sticky), permits = 0; GATED: no-op
 ```
 
 ## Good practices for co-jobs

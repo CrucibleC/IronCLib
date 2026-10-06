@@ -19,10 +19,10 @@
 
 /*
 USAGE:
-    - Type name: Error
-    - All Error types are accessed as Error_<Variant>, e.g. Error_Runtime, Error_FileNotFound, etc.
-    - Access error code as integer with Error_get(error) and error message string with Error_to_string(error)
-    - Check equality with Error_eq(err1, err2)
+    - Type name: AppError
+    - All AppError types are accessed as AppError_<Variant>, e.g. AppError_Runtime, AppError_FileNotFound, etc.
+    - Access error code as integer with AppError_get(error) and error message string with AppError_to_string(error)
+    - Check equality with AppError_eq(err1, err2)
 */
 
 #include "ironclib/ic_typenum.h"
@@ -94,6 +94,6 @@ USAGE:
     
 
 // Generate a global error type with the provided list
-IC_TYPENUM_FULL(Error, int, GLOBAL_ERROR_LIST)
+IC_TYPENUM_FULL(AppError, int, GLOBAL_ERROR_LIST)
 
 #endif // PREMADE_GLOBAL_ERROR_H

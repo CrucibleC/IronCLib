@@ -766,9 +766,9 @@ IHC_TEST(stress_broadcast_reset_reblocks_waiters)
 // ==============================================================================
 
 #define TASKPOOL_THREADS 4
-IC_STATIC_ASSERT((TASKPOOL_THREADS > 0) && (TASKPOOL_THREADS <= TASKPOOL_MAX_THREADS), "TASKPOOL_THREADS must be in legal range");
+IC_STATIC_ASSERT((TASKPOOL_THREADS > 0) && (TASKPOOL_THREADS <= PW_TASKPOOL_MAX_THREADS), "TASKPOOL_THREADS must be in legal range");
 #define TASKPOOL_TASKS 64
-IC_STATIC_ASSERT((TASKPOOL_TASKS > 0) && (TASKPOOL_TASKS <= TASKPOOL_MAX_PENDING_TASKS + TASKPOOL_MAX_THREADS), "TASKPOOL_TASKS must be in legal range");
+IC_STATIC_ASSERT((TASKPOOL_TASKS > 0) && (TASKPOOL_TASKS <= PW_TASKPOOL_MAX_PENDING_TASKS + PW_TASKPOOL_MAX_THREADS), "TASKPOOL_TASKS must be in legal range");
 #define TASK_TEST_WAIT_TIMEOUT (100 * 1000)
 
 static void taskpool_increment(void* arg)
@@ -779,45 +779,45 @@ static void taskpool_increment(void* arg)
 
 IHC_TEST(verify_task_pool_executes_all_tasks_with_completion)
 {
-    TaskPool pool;
-    IHC_ASSERT(Error_eq(task_pool_init(&pool, TASKPOOL_THREADS), Error_NoError));
+    PwTaskPool pool;
+    IHC_ASSERT(AppError_eq(pw_task_pool_init(&pool, TASKPOOL_THREADS), AppError_NoError));
 
     ic_atomic_i32 counter = ic_make_atomic(0);
-    TaskCompletion completions[TASKPOOL_TASKS];
+    PwTaskCompletion completions[TASKPOOL_TASKS];
     for (int i = 0; i < TASKPOOL_TASKS; i++)
     {
-        Error err = task_pool_submit(&pool, taskpool_increment, &counter, &completions[i]);
-        IHC_CHECK(Error_eq(err, Error_NoError));
+        AppError err = pw_task_pool_submit(&pool, taskpool_increment, &counter, &completions[i]);
+        IHC_CHECK(AppError_eq(err, AppError_NoError));
     }
 
     for (int i = 0; i < TASKPOOL_TASKS; i++)
     {
-        Error err = task_completion_wait(&completions[i], 1, TASK_TEST_WAIT_TIMEOUT);
-        IHC_CHECK(Error_eq(err, Error_NoError));
+        AppError err = pw_task_completion_wait(&completions[i], 1, TASK_TEST_WAIT_TIMEOUT);
+        IHC_CHECK(AppError_eq(err, AppError_NoError));
     }
 
     IHC_CHECK(ic_atomic_load(&counter) == TASKPOOL_TASKS);
 
-    IHC_ASSERT(Error_eq(task_pool_close(&pool, TaskPoolClose_Abort, TASK_TEST_WAIT_TIMEOUT), Error_NoError));
-    IHC_CHECK(Error_eq(task_pool_destroy(&pool), Error_NoError));
+    IHC_ASSERT(AppError_eq(pw_task_pool_close(&pool, PwTaskPoolClose_Abort, TASK_TEST_WAIT_TIMEOUT), AppError_NoError));
+    IHC_CHECK(AppError_eq(pw_task_pool_destroy(&pool), AppError_NoError));
 }
 
 IHC_TEST(verify_task_pool_fire_and_forget_executes_tasks)
 {
-    TaskPool pool;
-    IHC_ASSERT(Error_eq(task_pool_init(&pool, TASKPOOL_THREADS), Error_NoError));
+    PwTaskPool pool;
+    IHC_ASSERT(AppError_eq(pw_task_pool_init(&pool, TASKPOOL_THREADS), AppError_NoError));
     
     ic_atomic_i32 counter = ic_make_atomic(0);
     for (int i = 0; i < TASKPOOL_TASKS; i++)
     {
-        Error err = task_pool_submit(&pool, taskpool_increment, &counter, NULL);
-        IHC_CHECK(Error_eq(err, Error_NoError));
+        AppError err = pw_task_pool_submit(&pool, taskpool_increment, &counter, NULL);
+        IHC_CHECK(AppError_eq(err, AppError_NoError));
     }
 
     ic_thread_sleep(10);
 
-    IHC_ASSERT(Error_eq(task_pool_close(&pool, TaskPoolClose_Abort, TASK_TEST_WAIT_TIMEOUT), Error_NoError));
-    IHC_CHECK(Error_eq(task_pool_destroy(&pool), Error_NoError));
+    IHC_ASSERT(AppError_eq(pw_task_pool_close(&pool, PwTaskPoolClose_Abort, TASK_TEST_WAIT_TIMEOUT), AppError_NoError));
+    IHC_CHECK(AppError_eq(pw_task_pool_destroy(&pool), AppError_NoError));
 }
 
 typedef struct taskpool_order_ctx
@@ -845,8 +845,8 @@ static void taskpool_order_worker(void* arg)
 
 IHC_TEST(verify_task_pool_processes_tasks_consistently)
 {
-    TaskPool pool;
-    IHC_ASSERT(Error_eq(task_pool_init(&pool, TASKPOOL_THREADS), Error_NoError));
+    PwTaskPool pool;
+    IHC_ASSERT(AppError_eq(pw_task_pool_init(&pool, TASKPOOL_THREADS), AppError_NoError));
 
     taskpool_order_ctx ctx = {0};
 
@@ -857,14 +857,14 @@ IHC_TEST(verify_task_pool_processes_tasks_consistently)
 
     for (int i = 0; i < TASKPOOL_TASKS; i++)
     {
-        Error err = task_pool_submit(&pool, taskpool_order_worker, &ctx, NULL);
-        IHC_CHECK(Error_eq(err, Error_NoError));
+        AppError err = pw_task_pool_submit(&pool, taskpool_order_worker, &ctx, NULL);
+        IHC_CHECK(AppError_eq(err, AppError_NoError));
     }
 
     ic_thread_sleep(10);
 
-    IHC_ASSERT(Error_eq(task_pool_close(&pool, TaskPoolClose_Abort, TASK_TEST_WAIT_TIMEOUT), Error_NoError));
-    IHC_CHECK(Error_eq(task_pool_destroy(&pool), Error_NoError));
+    IHC_ASSERT(AppError_eq(pw_task_pool_close(&pool, PwTaskPoolClose_Abort, TASK_TEST_WAIT_TIMEOUT), AppError_NoError));
+    IHC_CHECK(AppError_eq(pw_task_pool_destroy(&pool), AppError_NoError));
 
     ic_mutex_destroy(&ctx.mutex);
 }
@@ -876,40 +876,40 @@ static void do_nothing(void* arg)
 
 IHC_TEST(verify_task_pool_rejects_null_arguments)
 {
-    IHC_ASSERT(Error_eq(task_pool_init(NULL, TASKPOOL_THREADS), Error_NullRef));
-    IHC_ASSERT(Error_eq(task_pool_close(NULL, TaskPoolClose_Drain, TASK_TEST_WAIT_TIMEOUT), Error_NullRef));
-    IHC_ASSERT(Error_eq(task_pool_close(NULL, TaskPoolClose_Abort, TASK_TEST_WAIT_TIMEOUT), Error_NullRef));
-    IHC_ASSERT(Error_eq(task_pool_destroy(NULL), Error_NullRef));
-    IHC_ASSERT(Error_eq(task_pool_submit(NULL, taskpool_increment, NULL, NULL), Error_NullRef));
+    IHC_ASSERT(AppError_eq(pw_task_pool_init(NULL, TASKPOOL_THREADS), AppError_NullRef));
+    IHC_ASSERT(AppError_eq(pw_task_pool_close(NULL, PwTaskPoolClose_Drain, TASK_TEST_WAIT_TIMEOUT), AppError_NullRef));
+    IHC_ASSERT(AppError_eq(pw_task_pool_close(NULL, PwTaskPoolClose_Abort, TASK_TEST_WAIT_TIMEOUT), AppError_NullRef));
+    IHC_ASSERT(AppError_eq(pw_task_pool_destroy(NULL), AppError_NullRef));
+    IHC_ASSERT(AppError_eq(pw_task_pool_submit(NULL, taskpool_increment, NULL, NULL), AppError_NullRef));
     
-    TaskPool pool;
-    IHC_ASSERT(Error_eq(task_pool_init(&pool, TASKPOOL_THREADS), Error_NoError));
-    IHC_CHECK(Error_eq(task_pool_submit(&pool, NULL, NULL, NULL), Error_NullRef));
-    TaskCompletion completion;
-    IHC_CHECK(Error_eq(task_pool_submit(&pool, do_nothing, NULL, &completion), Error_NoError));
-    IHC_ASSERT(Error_eq(task_completion_wait(NULL, 1, TASK_TEST_WAIT_TIMEOUT), Error_NullRef));
-    IHC_ASSERT(Error_eq(task_completion_wait(&completion, -1, TASK_TEST_WAIT_TIMEOUT), Error_Argument));
-    IHC_ASSERT(Error_eq(task_completion_wait(&completion, 1, -1), Error_Argument));
+    PwTaskPool pool;
+    IHC_ASSERT(AppError_eq(pw_task_pool_init(&pool, TASKPOOL_THREADS), AppError_NoError));
+    IHC_CHECK(AppError_eq(pw_task_pool_submit(&pool, NULL, NULL, NULL), AppError_NullRef));
+    PwTaskCompletion completion;
+    IHC_CHECK(AppError_eq(pw_task_pool_submit(&pool, do_nothing, NULL, &completion), AppError_NoError));
+    IHC_ASSERT(AppError_eq(pw_task_completion_wait(NULL, 1, TASK_TEST_WAIT_TIMEOUT), AppError_NullRef));
+    IHC_ASSERT(AppError_eq(pw_task_completion_wait(&completion, -1, TASK_TEST_WAIT_TIMEOUT), AppError_Argument));
+    IHC_ASSERT(AppError_eq(pw_task_completion_wait(&completion, 1, -1), AppError_Argument));
 
-    IHC_ASSERT(Error_eq(task_pool_close(&pool, TaskPoolClose_Abort, TASK_TEST_WAIT_TIMEOUT), Error_NoError));
-    IHC_CHECK(Error_eq(task_pool_destroy(&pool), Error_NoError));
+    IHC_ASSERT(AppError_eq(pw_task_pool_close(&pool, PwTaskPoolClose_Abort, TASK_TEST_WAIT_TIMEOUT), AppError_NoError));
+    IHC_CHECK(AppError_eq(pw_task_pool_destroy(&pool), AppError_NoError));
 }
 
 IHC_TEST(verify_task_completion_wait_times_out_and_resolves)
 {
-    TaskPool pool;
-    IHC_ASSERT(Error_eq(task_pool_init(&pool, TASKPOOL_THREADS), Error_NoError));
+    PwTaskPool pool;
+    IHC_ASSERT(AppError_eq(pw_task_pool_init(&pool, TASKPOOL_THREADS), AppError_NoError));
     ic_atomic_i32 counter = ic_make_atomic(0);
 
-    TaskCompletion completion;
-    Error err = task_pool_submit(&pool, taskpool_increment, &counter, &completion);
-    IHC_CHECK(Error_eq(err, Error_NoError));
+    PwTaskCompletion completion;
+    AppError err = pw_task_pool_submit(&pool, taskpool_increment, &counter, &completion);
+    IHC_CHECK(AppError_eq(err, AppError_NoError));
 
-    err = task_completion_wait(&completion, 1, TASK_TEST_WAIT_TIMEOUT);
-    IHC_CHECK(Error_eq(err, Error_NoError));
+    err = pw_task_completion_wait(&completion, 1, TASK_TEST_WAIT_TIMEOUT);
+    IHC_CHECK(AppError_eq(err, AppError_NoError));
 
-    IHC_ASSERT(Error_eq(task_pool_close(&pool, TaskPoolClose_Abort, TASK_TEST_WAIT_TIMEOUT), Error_NoError));
-    IHC_CHECK(Error_eq(task_pool_destroy(&pool), Error_NoError));
+    IHC_ASSERT(AppError_eq(pw_task_pool_close(&pool, PwTaskPoolClose_Abort, TASK_TEST_WAIT_TIMEOUT), AppError_NoError));
+    IHC_CHECK(AppError_eq(pw_task_pool_destroy(&pool), AppError_NoError));
 }
 
 typedef struct taskpool_lifecycle_ctx
@@ -925,48 +925,48 @@ static void taskpool_lifecycle_worker(void* arg)
 
 IHC_TEST(verify_task_pool_close_state_transitions)
 {
-    TaskPool pool;
-    IHC_ASSERT(Error_eq(task_pool_init(&pool, TASKPOOL_THREADS), Error_NoError));
+    PwTaskPool pool;
+    IHC_ASSERT(AppError_eq(pw_task_pool_init(&pool, TASKPOOL_THREADS), AppError_NoError));
 
     taskpool_lifecycle_ctx ctx;
     ctx.counter = ic_make_atomic(0);
 
-    TaskCompletion completions[TASKPOOL_TASKS];
+    PwTaskCompletion completions[TASKPOOL_TASKS];
 
     for (int i = 0; i < TASKPOOL_TASKS; i++)
     {
-        Error err = task_pool_submit(&pool, taskpool_lifecycle_worker, &ctx, &completions[i]);
-        IHC_CHECK(Error_eq(err, Error_NoError));
+        AppError err = pw_task_pool_submit(&pool, taskpool_lifecycle_worker, &ctx, &completions[i]);
+        IHC_CHECK(AppError_eq(err, AppError_NoError));
     }
 
     // Wait for all tasks to finish execution (completion correctness test)
     for (int i = 0; i < TASKPOOL_TASKS; i++)
     {
-        IHC_CHECK(Error_eq(task_completion_wait(&completions[i], 1, TASK_TEST_WAIT_TIMEOUT), Error_NoError));
+        IHC_CHECK(AppError_eq(pw_task_completion_wait(&completions[i], 1, TASK_TEST_WAIT_TIMEOUT), AppError_NoError));
     }
 
     // Drain queue AND finish active tasks, but don't allow new submissions
-    IHC_CHECK(Error_eq(task_pool_close(&pool, TaskPoolClose_Drain, TASK_TEST_WAIT_TIMEOUT), Error_NoError));
+    IHC_CHECK(AppError_eq(pw_task_pool_close(&pool, PwTaskPoolClose_Drain, TASK_TEST_WAIT_TIMEOUT), AppError_NoError));
 
     // Submissions must now fail
-    Error err = task_pool_submit(&pool, taskpool_lifecycle_worker, &ctx, NULL);
-    IHC_CHECK(Error_eq(err, Error_InvalidState));
+    AppError err = pw_task_pool_submit(&pool, taskpool_lifecycle_worker, &ctx, NULL);
+    IHC_CHECK(AppError_eq(err, AppError_InvalidState));
 
     IHC_CHECK(ic_atomic_load(&ctx.counter) == TASKPOOL_TASKS);
 
-    err = task_pool_submit(&pool, taskpool_lifecycle_worker, &ctx, NULL);
-    IHC_CHECK(Error_eq(err, Error_InvalidState));
+    err = pw_task_pool_submit(&pool, taskpool_lifecycle_worker, &ctx, NULL);
+    IHC_CHECK(AppError_eq(err, AppError_InvalidState));
 
     // Finish active tasks, but don't execute any pending tasks, and don't allow new submissions
-    IHC_CHECK(Error_eq(task_pool_close(&pool, TaskPoolClose_Abort, TASK_TEST_WAIT_TIMEOUT), Error_NoError));
+    IHC_CHECK(AppError_eq(pw_task_pool_close(&pool, PwTaskPoolClose_Abort, TASK_TEST_WAIT_TIMEOUT), AppError_NoError));
 
-    err = task_pool_close(&pool, TaskPoolClose_Drain, TASK_TEST_WAIT_TIMEOUT);
-    IHC_ASSERT(Error_eq(err, Error_InvalidState));
+    err = pw_task_pool_close(&pool, PwTaskPoolClose_Drain, TASK_TEST_WAIT_TIMEOUT);
+    IHC_ASSERT(AppError_eq(err, AppError_InvalidState));
 
-    err = task_pool_submit(&pool, taskpool_lifecycle_worker, &ctx, NULL);
-    IHC_CHECK(Error_eq(err, Error_InvalidState));
+    err = pw_task_pool_submit(&pool, taskpool_lifecycle_worker, &ctx, NULL);
+    IHC_CHECK(AppError_eq(err, AppError_InvalidState));
 
-    IHC_CHECK(Error_eq(task_pool_destroy(&pool), Error_NoError));
+    IHC_CHECK(AppError_eq(pw_task_pool_destroy(&pool), AppError_NoError));
 }
 
 #define TASKPOOL_CLOSE_TEST_TASKS 32
@@ -983,27 +983,27 @@ static void taskpool_slow_worker(void* arg)
 
     ic_atomic_fetch_add(&ctx->started, 1);
 
-    thread_sleep_milliseconds(50);
+    pw_thread_sleep_milliseconds(50);
 
     ic_atomic_fetch_add(&ctx->completed, 1);
 }
 
 IHC_TEST(verify_task_pool_close_drain_completes_all_tasks)
 {
-    TaskPool pool;
-    IHC_ASSERT(Error_eq(task_pool_init(&pool, TASKPOOL_THREADS), Error_NoError));
+    PwTaskPool pool;
+    IHC_ASSERT(AppError_eq(pw_task_pool_init(&pool, TASKPOOL_THREADS), AppError_NoError));
 
     taskpool_close_test_ctx ctx = {0};
     ctx.started = ic_make_atomic(0);
     ctx.completed = ic_make_atomic(0);
 
-    TaskCompletion completions[TASKPOOL_CLOSE_TEST_TASKS];
+    PwTaskCompletion completions[TASKPOOL_CLOSE_TEST_TASKS];
 
     for (int i = 0; i < TASKPOOL_CLOSE_TEST_TASKS; i++)
     {
-        IHC_ASSERT(Error_eq( 
-            task_pool_submit(&pool, taskpool_slow_worker, &ctx, &completions[i]),
-            Error_NoError
+        IHC_ASSERT(AppError_eq( 
+            pw_task_pool_submit(&pool, taskpool_slow_worker, &ctx, &completions[i]),
+            AppError_NoError
         ));
     }
 
@@ -1012,21 +1012,21 @@ IHC_TEST(verify_task_pool_close_drain_completes_all_tasks)
         ic_thread_sleep(1);
     }
 
-    IHC_ASSERT(Error_eq(
-        task_pool_close(&pool, TaskPoolClose_Drain, TASK_TEST_WAIT_TIMEOUT),
-        Error_NoError
+    IHC_ASSERT(AppError_eq(
+        pw_task_pool_close(&pool, PwTaskPoolClose_Drain, TASK_TEST_WAIT_TIMEOUT),
+        AppError_NoError
     ));
 
     IHC_CHECK(ic_atomic_load(&ctx.started) == TASKPOOL_CLOSE_TEST_TASKS);
     IHC_CHECK(ic_atomic_load(&ctx.completed) == TASKPOOL_CLOSE_TEST_TASKS);
 
-    IHC_ASSERT(Error_eq(task_pool_destroy(&pool), Error_NoError));
+    IHC_ASSERT(AppError_eq(pw_task_pool_destroy(&pool), AppError_NoError));
 }
 
 IHC_TEST(verify_task_pool_close_abort_drops_queued_tasks)
 {
-    TaskPool pool;
-    IHC_ASSERT(Error_eq(task_pool_init(&pool, TASKPOOL_THREADS), Error_NoError));
+    PwTaskPool pool;
+    IHC_ASSERT(AppError_eq(pw_task_pool_init(&pool, TASKPOOL_THREADS), AppError_NoError));
 
     taskpool_close_test_ctx ctx = {0};
     ctx.started = ic_make_atomic(0);
@@ -1034,9 +1034,9 @@ IHC_TEST(verify_task_pool_close_abort_drops_queued_tasks)
 
     for (int i = 0; i < TASKPOOL_CLOSE_TEST_TASKS; i++)
     {
-        IHC_ASSERT(Error_eq(
-            task_pool_submit(&pool, taskpool_slow_worker, &ctx, NULL),
-            Error_NoError
+        IHC_ASSERT(AppError_eq(
+            pw_task_pool_submit(&pool, taskpool_slow_worker, &ctx, NULL),
+            AppError_NoError
         ));
     }
 
@@ -1045,9 +1045,9 @@ IHC_TEST(verify_task_pool_close_abort_drops_queued_tasks)
         ic_thread_sleep(1);
     }
 
-    IHC_ASSERT(Error_eq(
-        task_pool_close(&pool, TaskPoolClose_Abort, TASK_TEST_WAIT_TIMEOUT),
-        Error_NoError
+    IHC_ASSERT(AppError_eq(
+        pw_task_pool_close(&pool, PwTaskPoolClose_Abort, TASK_TEST_WAIT_TIMEOUT),
+        AppError_NoError
     ));
 
     int started = ic_atomic_load(&ctx.started);
@@ -1059,7 +1059,7 @@ IHC_TEST(verify_task_pool_close_abort_drops_queued_tasks)
     // but anything that started must finish
     IHC_CHECK(completed == started);
 
-    IHC_ASSERT(Error_eq(task_pool_destroy(&pool), Error_NoError));
+    IHC_ASSERT(AppError_eq(pw_task_pool_destroy(&pool), AppError_NoError));
 }
 
 static void worker_stuck_until_signaled(void* arg)
@@ -1070,54 +1070,54 @@ static void worker_stuck_until_signaled(void* arg)
 
 IHC_TEST(verify_task_pool_reaches_timeout_for_blocking_tasks)
 {
-    TaskPool pool;
-    IHC_ASSERT(Error_eq(task_pool_init(&pool, TASKPOOL_THREADS), Error_NoError));
+    PwTaskPool pool;
+    IHC_ASSERT(AppError_eq(pw_task_pool_init(&pool, TASKPOOL_THREADS), AppError_NoError));
     ic_broadcast broadcast;
     IHC_ASSERT(ic_broadcast_init(&broadcast) == IC_CONCURRENCY_OK);
 
-    TaskCompletion first_completion;
-    IHC_ASSERT(Error_eq(
-        task_pool_submit(&pool, worker_stuck_until_signaled, &broadcast, &first_completion),
-        Error_NoError
+    PwTaskCompletion first_completion;
+    IHC_ASSERT(AppError_eq(
+        pw_task_pool_submit(&pool, worker_stuck_until_signaled, &broadcast, &first_completion),
+        AppError_NoError
     ));
     for (int i = 1; i < TASKPOOL_TASKS; i++) // Note that it starts at 1 since we already submitted one above
     {
-        IHC_ASSERT(Error_eq(
-            task_pool_submit(&pool, worker_stuck_until_signaled, &broadcast, NULL),
-            Error_NoError
+        IHC_ASSERT(AppError_eq(
+            pw_task_pool_submit(&pool, worker_stuck_until_signaled, &broadcast, NULL),
+            AppError_NoError
         ));
     }
 
     // If the close call doesn't time out correctly, this test will hang instead of fail
-    IHC_CHECK(Error_eq(
-        task_completion_wait(&first_completion, 1, 100),
-        Error_Timeout
+    IHC_CHECK(AppError_eq(
+        pw_task_completion_wait(&first_completion, 1, 100),
+        AppError_Timeout
     ));
-    IHC_CHECK(Error_eq(
-        task_pool_close(&pool, TaskPoolClose_Drain, 100),
-        Error_Timeout
+    IHC_CHECK(AppError_eq(
+        pw_task_pool_close(&pool, PwTaskPoolClose_Drain, 100),
+        AppError_Timeout
     ));
-    IHC_CHECK(Error_eq(
-        task_pool_close(&pool, TaskPoolClose_Abort, 100),
-        Error_Timeout
+    IHC_CHECK(AppError_eq(
+        pw_task_pool_close(&pool, PwTaskPoolClose_Abort, 100),
+        AppError_Timeout
     ));
 
 
     // Now signal the tasks so they can finish and not leak
     IHC_ASSERT(ic_broadcast_signal_all(&broadcast) == IC_CONCURRENCY_OK);
-    IHC_ASSERT(Error_eq(
-        task_pool_close(&pool, TaskPoolClose_Abort, TASK_TEST_WAIT_TIMEOUT),
-        Error_NoError
+    IHC_ASSERT(AppError_eq(
+        pw_task_pool_close(&pool, PwTaskPoolClose_Abort, TASK_TEST_WAIT_TIMEOUT),
+        AppError_NoError
     ));
 
-    IHC_CHECK(Error_eq(task_pool_destroy(&pool), Error_NoError));
+    IHC_CHECK(AppError_eq(pw_task_pool_destroy(&pool), AppError_NoError));
     IHC_CHECK(ic_broadcast_destroy(&broadcast) == IC_CONCURRENCY_OK);
 }
 
 IHC_TEST(verify_task_pool_can_safely_be_destroyed_without_manually_closing)
 {
-    TaskPool pool;
-    IHC_ASSERT(Error_eq(task_pool_init(&pool, TASKPOOL_THREADS), Error_NoError));
+    PwTaskPool pool;
+    IHC_ASSERT(AppError_eq(pw_task_pool_init(&pool, TASKPOOL_THREADS), AppError_NoError));
 
     taskpool_close_test_ctx ctx = {0};
     ctx.started = ic_make_atomic(0);
@@ -1125,16 +1125,16 @@ IHC_TEST(verify_task_pool_can_safely_be_destroyed_without_manually_closing)
 
     for (int i = 0; i < TASKPOOL_TASKS; i++)
     {
-        IHC_ASSERT(Error_eq(
-            task_pool_submit(&pool, taskpool_slow_worker, &ctx, NULL),
-            Error_NoError
+        IHC_ASSERT(AppError_eq(
+            pw_task_pool_submit(&pool, taskpool_slow_worker, &ctx, NULL),
+            AppError_NoError
         ));
     }
 
     
     // Don't manually close the pool - just destroy it directly. 
     // This should abort active tasks but not finish queued tasks.
-    IHC_ASSERT(Error_eq(task_pool_destroy(&pool), Error_NoError));
+    IHC_ASSERT(AppError_eq(pw_task_pool_destroy(&pool), AppError_NoError));
     
     const int32_t started = ic_atomic_load(&ctx.started);
     const int32_t completed = ic_atomic_load(&ctx.completed);
@@ -1144,34 +1144,34 @@ IHC_TEST(verify_task_pool_can_safely_be_destroyed_without_manually_closing)
 
 IHC_TEST(verify_task_pool_can_fill_up_and_safely_reject_excess_tasks)
 {
-    TaskPool pool;
-    IHC_ASSERT(Error_eq(task_pool_init(&pool, TASKPOOL_MAX_THREADS), Error_NoError));
+    PwTaskPool pool;
+    IHC_ASSERT(AppError_eq(pw_task_pool_init(&pool, PW_TASKPOOL_MAX_THREADS), AppError_NoError));
     ic_broadcast broadcast;
     IHC_ASSERT(ic_broadcast_init(&broadcast) == IC_CONCURRENCY_OK);
 
-    for (int i = 0; i < TASKPOOL_MAX_THREADS; i++)
+    for (int i = 0; i < PW_TASKPOOL_MAX_THREADS; i++)
     {
-        IHC_ASSERT(Error_eq(
-            task_pool_submit(&pool, worker_stuck_until_signaled, &broadcast, NULL),
-            Error_NoError
+        IHC_ASSERT(AppError_eq(
+            pw_task_pool_submit(&pool, worker_stuck_until_signaled, &broadcast, NULL),
+            AppError_NoError
         ));
     }
     ic_thread_sleep(10); // ensure all worker threads have started and are blocking on the broadcast
-    for (int i = 0; i < TASKPOOL_MAX_PENDING_TASKS; i++)
+    for (int i = 0; i < PW_TASKPOOL_MAX_PENDING_TASKS; i++)
     {
-        IHC_ASSERT(Error_eq(
-            task_pool_submit(&pool, worker_stuck_until_signaled, &broadcast, NULL),
-            Error_NoError
+        IHC_ASSERT(AppError_eq(
+            pw_task_pool_submit(&pool, worker_stuck_until_signaled, &broadcast, NULL),
+            AppError_NoError
         ));
     }
 
     // This is the real check to validate the test
-    Error err = task_pool_submit(&pool, worker_stuck_until_signaled, &broadcast, NULL);
-    IHC_CHECK(Error_eq(err, Error_OutOfBounds));
+    AppError err = pw_task_pool_submit(&pool, worker_stuck_until_signaled, &broadcast, NULL);
+    IHC_CHECK(AppError_eq(err, AppError_OutOfBounds));
 
     IHC_ASSERT(ic_broadcast_signal_all(&broadcast) == IC_CONCURRENCY_OK);
-    IHC_ASSERT(Error_eq(task_pool_close(&pool, TaskPoolClose_Drain, TASK_TEST_WAIT_TIMEOUT), Error_NoError));
-    IHC_ASSERT(Error_eq(task_pool_destroy(&pool), Error_NoError));
+    IHC_ASSERT(AppError_eq(pw_task_pool_close(&pool, PwTaskPoolClose_Drain, TASK_TEST_WAIT_TIMEOUT), AppError_NoError));
+    IHC_ASSERT(AppError_eq(pw_task_pool_destroy(&pool), AppError_NoError));
     IHC_ASSERT(ic_broadcast_destroy(&broadcast) == IC_CONCURRENCY_OK);
 }
 
@@ -1185,7 +1185,7 @@ IHC_TEST(verify_task_pool_can_fill_up_and_safely_reject_excess_tasks)
 
 typedef struct taskpool_stress_submit_ctx
 {
-    TaskPool* pool;
+    PwTaskPool* pool;
     ic_atomic_i32 submitted;
     ic_atomic_i32 completed;
 } taskpool_stress_submit_ctx;
@@ -1202,7 +1202,7 @@ static int stress_submitter_thread(void* arg)
 
     for (int i = 0; i < TASKPOOL_STRESS_TASKS_PER_THREAD; i++)
     {
-        Error err = task_pool_submit(
+        AppError err = pw_task_pool_submit(
             ctx->pool,
             stress_increment_worker,
             ctx,
@@ -1210,13 +1210,13 @@ static int stress_submitter_thread(void* arg)
         );
 
         // Pool saturation is acceptable during stress
-        if (Error_eq(err, Error_NoError))
+        if (AppError_eq(err, AppError_NoError))
         {
             ic_atomic_fetch_add(&ctx->submitted, 1);
         }
         else
         {
-            IHC_CHECK(Error_eq(err, Error_OutOfBounds));
+            IHC_CHECK(AppError_eq(err, AppError_OutOfBounds));
         }
     }
 
@@ -1225,11 +1225,11 @@ static int stress_submitter_thread(void* arg)
 
 IHC_TEST(stress_task_pool_handles_high_contention_submissions)
 {
-    TaskPool pool;
+    PwTaskPool pool;
 
-    IHC_ASSERT(Error_eq(
-        task_pool_init(&pool, TASKPOOL_MAX_THREADS),
-        Error_NoError
+    IHC_ASSERT(AppError_eq(
+        pw_task_pool_init(&pool, PW_TASKPOOL_MAX_THREADS),
+        AppError_NoError
     ));
 
     taskpool_stress_submit_ctx ctx = {0};
@@ -1238,27 +1238,27 @@ IHC_TEST(stress_task_pool_handles_high_contention_submissions)
     ctx.submitted = ic_make_atomic(0);
     ctx.completed = ic_make_atomic(0);
 
-    Task submitters[TASKPOOL_STRESS_THREADS];
+    PwTask submitters[TASKPOOL_STRESS_THREADS];
 
     for (int i = 0; i < TASKPOOL_STRESS_THREADS; i++)
     {
-        IHC_ASSERT(Error_eq(
-            task_init(&submitters[i], stress_submitter_thread, &ctx),
-            Error_NoError
+        IHC_ASSERT(AppError_eq(
+            pw_task_init(&submitters[i], stress_submitter_thread, &ctx),
+            AppError_NoError
         ));
     }
 
     for (int i = 0; i < TASKPOOL_STRESS_THREADS; i++)
     {
-        IHC_ASSERT(Error_eq(
-            task_join(&submitters[i]),
-            Error_NoError
+        IHC_ASSERT(AppError_eq(
+            pw_task_join(&submitters[i]),
+            AppError_NoError
         ));
     }
 
-    IHC_ASSERT(Error_eq(
-        task_pool_close(&pool, TaskPoolClose_Drain, TASK_TEST_WAIT_TIMEOUT),
-        Error_NoError
+    IHC_ASSERT(AppError_eq(
+        pw_task_pool_close(&pool, PwTaskPoolClose_Drain, TASK_TEST_WAIT_TIMEOUT),
+        AppError_NoError
     ));
 
     const int32_t submitted = ic_atomic_load(&ctx.submitted);
@@ -1266,12 +1266,12 @@ IHC_TEST(stress_task_pool_handles_high_contention_submissions)
 
     IHC_CHECK(completed == submitted);
 
-    IHC_ASSERT(Error_eq(task_pool_destroy(&pool), Error_NoError));
+    IHC_ASSERT(AppError_eq(pw_task_pool_destroy(&pool), AppError_NoError));
 }
 
 typedef struct shutdown_race_ctx
 {
-    TaskPool* pool;
+    PwTaskPool* pool;
     ic_atomic_i32 successful_submits;
     ic_atomic_i32 failed_submits;
     ic_atomic_i32 executed;
@@ -1281,7 +1281,7 @@ static void shutdown_race_worker(void* arg)
 {
     shutdown_race_ctx* ctx = (shutdown_race_ctx*)arg;
 
-    thread_sleep_milliseconds(1);
+    pw_thread_sleep_milliseconds(1);
 
     ic_atomic_fetch_add(&ctx->executed, 1);
 }
@@ -1292,14 +1292,14 @@ static int shutdown_race_submitter(void* arg)
 
     for (int i = 0; i < 10000; i++)
     {
-        Error err = task_pool_submit(
+        AppError err = pw_task_pool_submit(
             ctx->pool,
             shutdown_race_worker,
             ctx,
             NULL
         );
 
-        if (Error_eq(err, Error_NoError))
+        if (AppError_eq(err, AppError_NoError))
         {
             ic_atomic_fetch_add(&ctx->successful_submits, 1);
         }
@@ -1307,8 +1307,8 @@ static int shutdown_race_submitter(void* arg)
         {
             // During shutdown or saturation these are valid
             IHC_CHECK(
-                Error_eq(err, Error_OutOfBounds) ||
-                Error_eq(err, Error_InvalidState)
+                AppError_eq(err, AppError_OutOfBounds) ||
+                AppError_eq(err, AppError_InvalidState)
             );
 
             ic_atomic_fetch_add(&ctx->failed_submits, 1);
@@ -1320,11 +1320,11 @@ static int shutdown_race_submitter(void* arg)
 
 IHC_TEST(stress_task_pool_survives_shutdown_submission_races)
 {
-    TaskPool pool;
+    PwTaskPool pool;
 
-    IHC_ASSERT(Error_eq(
-        task_pool_init(&pool, TASKPOOL_MAX_THREADS),
-        Error_NoError
+    IHC_ASSERT(AppError_eq(
+        pw_task_pool_init(&pool, PW_TASKPOOL_MAX_THREADS),
+        AppError_NoError
     ));
 
     shutdown_race_ctx ctx = {0};
@@ -1334,28 +1334,28 @@ IHC_TEST(stress_task_pool_survives_shutdown_submission_races)
     ctx.failed_submits = ic_make_atomic(0);
     ctx.executed = ic_make_atomic(0);
 
-    Task submitters[4];
+    PwTask submitters[4];
 
     for (int i = 0; i < 4; i++)
     {
-        IHC_ASSERT(Error_eq(
-            task_init(&submitters[i], shutdown_race_submitter, &ctx),
-            Error_NoError
+        IHC_ASSERT(AppError_eq(
+            pw_task_init(&submitters[i], shutdown_race_submitter, &ctx),
+            AppError_NoError
         ));
     }
 
-    thread_sleep_milliseconds(10);
+    pw_thread_sleep_milliseconds(10);
 
-    IHC_ASSERT(Error_eq(
-        task_pool_close(&pool, TaskPoolClose_Abort, TASK_TEST_WAIT_TIMEOUT),
-        Error_NoError
+    IHC_ASSERT(AppError_eq(
+        pw_task_pool_close(&pool, PwTaskPoolClose_Abort, TASK_TEST_WAIT_TIMEOUT),
+        AppError_NoError
     ));
 
     for (int i = 0; i < 4; i++)
     {
-        IHC_ASSERT(Error_eq(
-            task_join(&submitters[i]),
-            Error_NoError
+        IHC_ASSERT(AppError_eq(
+            pw_task_join(&submitters[i]),
+            AppError_NoError
         ));
     }
 
@@ -1365,7 +1365,7 @@ IHC_TEST(stress_task_pool_survives_shutdown_submission_races)
     // Abort guarantees active jobs finish
     IHC_CHECK(executed <= successful);
 
-    IHC_ASSERT(Error_eq(task_pool_destroy(&pool), Error_NoError));
+    IHC_ASSERT(AppError_eq(pw_task_pool_destroy(&pool), AppError_NoError));
 }
 
 #define TASKPOOL_LIFECYCLE_ITERATIONS 1000
@@ -1374,38 +1374,38 @@ IHC_TEST(stress_task_pool_survives_repeated_lifecycle_cycles)
 {
     for (int iteration = 0; iteration < TASKPOOL_LIFECYCLE_ITERATIONS; iteration++)
     {
-        TaskPool pool;
+        PwTaskPool pool;
 
-        IHC_ASSERT(Error_eq(
-            task_pool_init(&pool, TASKPOOL_THREADS),
-            Error_NoError
+        IHC_ASSERT(AppError_eq(
+            pw_task_pool_init(&pool, TASKPOOL_THREADS),
+            AppError_NoError
         ));
 
         ic_atomic_i32 counter = ic_make_atomic(0);
 
         for (int i = 0; i < TASKPOOL_TASKS; i++)
         {
-            Error err = task_pool_submit(
+            AppError err = pw_task_pool_submit(
                 &pool,
                 taskpool_increment,
                 &counter,
                 NULL
             );
 
-            if (!Error_eq(err, Error_NoError))
+            if (!AppError_eq(err, AppError_NoError))
             {
-                IHC_CHECK(Error_eq(err, Error_OutOfBounds));
+                IHC_CHECK(AppError_eq(err, AppError_OutOfBounds));
             }
         }
 
-        IHC_ASSERT(Error_eq(
-            task_pool_close(&pool, TaskPoolClose_Drain, TASK_TEST_WAIT_TIMEOUT),
-            Error_NoError
+        IHC_ASSERT(AppError_eq(
+            pw_task_pool_close(&pool, PwTaskPoolClose_Drain, TASK_TEST_WAIT_TIMEOUT),
+            AppError_NoError
         ));
 
-        IHC_ASSERT(Error_eq(
-            task_pool_destroy(&pool),
-            Error_NoError
+        IHC_ASSERT(AppError_eq(
+            pw_task_pool_destroy(&pool),
+            AppError_NoError
         ));
     }
 }
