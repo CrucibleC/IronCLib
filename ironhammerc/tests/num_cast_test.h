@@ -143,4 +143,158 @@ IHC_TEST(verify_floating_point_conversions_for_large_type_to_small_type)
     IHC_CHECK(small_to_f32 == f32_min);
 }
 
+// Integer bounds rounded to floating-point can land outside the integer range ((f64)UINT64_MAX == 2^64),
+// so values at and around 2^63 and 2^64 must be clamped without reaching an out-of-range cast (UB).
+IHC_TEST(verify_floating_to_64_bit_integer_boundaries_are_exact)
+{
+    const f64 two_pow_63 = ldexp(1.0, 63);
+    const f64 two_pow_64 = ldexp(1.0, 64);
+    const f32 two_pow_63_f = ldexpf(1.0f, 63);
+    const f32 two_pow_64_f = ldexpf(1.0f, 64);
+
+    // f64 to u64
+    IHC_CHECK(cast_f64_to_u64((f64)UINT64_MAX) == UINT64_MAX); // (f64)UINT64_MAX is 2^64
+    IHC_CHECK(cast_f64_to_u64(two_pow_64) == UINT64_MAX);
+    IHC_CHECK(cast_f64_to_u64(nextafter(two_pow_64, INFINITY)) == UINT64_MAX);
+    IHC_CHECK(cast_f64_to_u64(nextafter(two_pow_64, 0.0)) == UINT64_MAX - 2047u); // 2^64 - 2^11
+    IHC_CHECK(cast_f64_to_u64(two_pow_63) == (u64)INT64_MAX + 1u);
+    IHC_CHECK(cast_f64_to_u64(nextafter(two_pow_63, INFINITY)) == (u64)INT64_MAX + 1u + 2048u);
+    IHC_CHECK(cast_f64_to_u64(nextafter(two_pow_63, 0.0)) == (u64)INT64_MAX - 1023u);
+    IHC_CHECK(cast_f64_to_u64(-0.0) == 0u);
+    IHC_CHECK(cast_f64_to_u64(nextafter(0.0, -INFINITY)) == 0u);
+    IHC_CHECK(cast_f64_to_u64(-1.0) == 0u);
+    IHC_CHECK(cast_f64_to_u64(-two_pow_64) == 0u);
+    IHC_CHECK(cast_f64_to_u64(NAN) == 0u);
+    IHC_CHECK(cast_f64_to_u64(INFINITY) == UINT64_MAX);
+    IHC_CHECK(cast_f64_to_u64(-INFINITY) == 0u);
+
+    // f64 to i64
+    IHC_CHECK(cast_f64_to_i64((f64)INT64_MAX) == INT64_MAX); // (f64)INT64_MAX is 2^63
+    IHC_CHECK(cast_f64_to_i64(two_pow_63) == INT64_MAX);
+    IHC_CHECK(cast_f64_to_i64(nextafter(two_pow_63, INFINITY)) == INT64_MAX);
+    IHC_CHECK(cast_f64_to_i64(nextafter(two_pow_63, 0.0)) == INT64_MAX - 1023); // 2^63 - 2^10
+    IHC_CHECK(cast_f64_to_i64(two_pow_64) == INT64_MAX);
+    IHC_CHECK(cast_f64_to_i64((f64)INT64_MIN) == INT64_MIN); // -2^63 is exact
+    IHC_CHECK(cast_f64_to_i64(nextafter(-two_pow_63, -INFINITY)) == INT64_MIN);
+    IHC_CHECK(cast_f64_to_i64(nextafter(-two_pow_63, 0.0)) == INT64_MIN + 1024);
+    IHC_CHECK(cast_f64_to_i64(-two_pow_64) == INT64_MIN);
+    IHC_CHECK(cast_f64_to_i64(NAN) == INT64_MIN);
+    IHC_CHECK(cast_f64_to_i64(INFINITY) == INT64_MAX);
+    IHC_CHECK(cast_f64_to_i64(-INFINITY) == INT64_MIN);
+
+    // f32 to u64
+    IHC_CHECK(cast_f32_to_u64(two_pow_64_f) == UINT64_MAX);
+    IHC_CHECK(cast_f32_to_u64(nextafterf(two_pow_64_f, INFINITY)) == UINT64_MAX);
+    IHC_CHECK(cast_f32_to_u64(nextafterf(two_pow_64_f, 0.0f)) == UINT64_MAX - 1099511627775u); // 2^64 - 2^40
+    IHC_CHECK(cast_f32_to_u64(-1.0f) == 0u);
+    IHC_CHECK(cast_f32_to_u64(NAN) == 0u);
+    IHC_CHECK(cast_f32_to_u64(INFINITY) == UINT64_MAX);
+    IHC_CHECK(cast_f32_to_u64(-INFINITY) == 0u);
+
+    // f32 to i64
+    IHC_CHECK(cast_f32_to_i64(two_pow_63_f) == INT64_MAX);
+    IHC_CHECK(cast_f32_to_i64(nextafterf(two_pow_63_f, INFINITY)) == INT64_MAX);
+    IHC_CHECK(cast_f32_to_i64(nextafterf(two_pow_63_f, 0.0f)) == INT64_MAX - 549755813887); // 2^63 - 2^39
+    IHC_CHECK(cast_f32_to_i64(-two_pow_63_f) == INT64_MIN);
+    IHC_CHECK(cast_f32_to_i64(nextafterf(-two_pow_63_f, -INFINITY)) == INT64_MIN);
+    IHC_CHECK(cast_f32_to_i64(NAN) == INT64_MIN);
+    IHC_CHECK(cast_f32_to_i64(INFINITY) == INT64_MAX);
+    IHC_CHECK(cast_f32_to_i64(-INFINITY) == INT64_MIN);
+}
+
+// (f32)INT32_MAX and (f32)UINT32_MAX also round up to 2^31 and 2^32
+IHC_TEST(verify_f32_to_32_bit_integer_boundaries_are_exact)
+{
+    const f32 two_pow_31_f = ldexpf(1.0f, 31);
+    const f32 two_pow_32_f = ldexpf(1.0f, 32);
+
+    // f32 to i32
+    IHC_CHECK(cast_f32_to_i32(two_pow_31_f) == INT32_MAX);
+    IHC_CHECK(cast_f32_to_i32(nextafterf(two_pow_31_f, INFINITY)) == INT32_MAX);
+    IHC_CHECK(cast_f32_to_i32(nextafterf(two_pow_31_f, 0.0f)) == INT32_MAX - 127); // 2^31 - 2^7
+    IHC_CHECK(cast_f32_to_i32(-two_pow_31_f) == INT32_MIN);
+    IHC_CHECK(cast_f32_to_i32(nextafterf(-two_pow_31_f, -INFINITY)) == INT32_MIN);
+    IHC_CHECK(cast_f32_to_i32(nextafterf(-two_pow_31_f, 0.0f)) == INT32_MIN + 128);
+    IHC_CHECK(cast_f32_to_i32(NAN) == INT32_MIN);
+    IHC_CHECK(cast_f32_to_i32(INFINITY) == INT32_MAX);
+    IHC_CHECK(cast_f32_to_i32(-INFINITY) == INT32_MIN);
+
+    // f32 to u32
+    IHC_CHECK(cast_f32_to_u32(two_pow_32_f) == UINT32_MAX);
+    IHC_CHECK(cast_f32_to_u32(nextafterf(two_pow_32_f, INFINITY)) == UINT32_MAX);
+    IHC_CHECK(cast_f32_to_u32(nextafterf(two_pow_32_f, 0.0f)) == UINT32_MAX - 255u); // 2^32 - 2^8
+    IHC_CHECK(cast_f32_to_u32(-1.0f) == 0u);
+    IHC_CHECK(cast_f32_to_u32(NAN) == 0u);
+    IHC_CHECK(cast_f32_to_u32(INFINITY) == UINT32_MAX);
+    IHC_CHECK(cast_f32_to_u32(-INFINITY) == 0u);
+}
+
+// Checks boundaries that are exactly representable in the floating-point type, and their closest neighbours
+#define IHC_NUM_CAST_CHECK_EXACT_BOUNDS(from, next, to, to_min, to_max)                \
+    IHC_CHECK(cast_##from##_to_##to((from)(to_max)) == (to_max));                      \
+    IHC_CHECK(cast_##from##_to_##to(next((from)(to_max), 0)) == (to_max) - 1);         \
+    IHC_CHECK(cast_##from##_to_##to(next((from)(to_max), INFINITY)) == (to_max));      \
+    IHC_CHECK(cast_##from##_to_##to((from)(to_max) + 1) == (to_max));                  \
+    IHC_CHECK(cast_##from##_to_##to((from)(to_min)) == (to_min));                      \
+    IHC_CHECK(cast_##from##_to_##to(next((from)(to_min), -INFINITY)) == (to_min));     \
+    IHC_CHECK(cast_##from##_to_##to((from)(to_min) - 1) == (to_min));                  \
+    IHC_CHECK(cast_##from##_to_##to((from)NAN) == (to_min));                           \
+    IHC_CHECK(cast_##from##_to_##to((from)INFINITY) == (to_max));                      \
+    IHC_CHECK(cast_##from##_to_##to((from)-INFINITY) == (to_min))
+
+IHC_TEST(verify_floating_to_small_integer_boundaries_are_exact)
+{
+    IHC_NUM_CAST_CHECK_EXACT_BOUNDS(f64, nextafter,  i8,  INT8_MIN,  INT8_MAX);
+    IHC_NUM_CAST_CHECK_EXACT_BOUNDS(f64, nextafter,  i16, INT16_MIN, INT16_MAX);
+    IHC_NUM_CAST_CHECK_EXACT_BOUNDS(f64, nextafter,  i32, INT32_MIN, INT32_MAX);
+    IHC_NUM_CAST_CHECK_EXACT_BOUNDS(f64, nextafter,  u8,  0,         UINT8_MAX);
+    IHC_NUM_CAST_CHECK_EXACT_BOUNDS(f64, nextafter,  u16, 0,         UINT16_MAX);
+    IHC_NUM_CAST_CHECK_EXACT_BOUNDS(f64, nextafter,  u32, 0,         UINT32_MAX);
+
+    IHC_NUM_CAST_CHECK_EXACT_BOUNDS(f32, nextafterf, i8,  INT8_MIN,  INT8_MAX);
+    IHC_NUM_CAST_CHECK_EXACT_BOUNDS(f32, nextafterf, i16, INT16_MIN, INT16_MAX);
+    IHC_NUM_CAST_CHECK_EXACT_BOUNDS(f32, nextafterf, u8,  0,         UINT8_MAX);
+    IHC_NUM_CAST_CHECK_EXACT_BOUNDS(f32, nextafterf, u16, 0,         UINT16_MAX);
+
+    // In-range fractions truncate toward zero
+    IHC_CHECK(cast_f64_to_i8(-127.9) == -127);
+    IHC_CHECK(cast_f64_to_u8(254.9) == 254u);
+}
+
+// The assert policy (used when IC_CAST_ASSERT_FUNC is defined) must reject everything the clamp policy clamps
+IC_DISABLE_WARNINGS
+IHC_TEST(verify_floating_to_integer_assert_policy_rejects_out_of_range)
+{
+    const f64 two_pow_63 = ldexp(1.0, 63);
+    const f64 two_pow_64 = ldexp(1.0, 64);
+    const f64 not_a_number = NAN;
+    const f64 infinity = INFINITY;
+
+    IHC_CHECK( IC_INNER_SAFE_FLOAT_TO_UNSIGNED_INT(u64, nextafter(two_pow_64, 0.0), 0, UINT64_MAX));
+    IHC_CHECK(!IC_INNER_SAFE_FLOAT_TO_UNSIGNED_INT(u64, two_pow_64, 0, UINT64_MAX));
+    IHC_CHECK(!IC_INNER_SAFE_FLOAT_TO_UNSIGNED_INT(u64, (f64)UINT64_MAX, 0, UINT64_MAX));
+    IHC_CHECK(!IC_INNER_SAFE_FLOAT_TO_UNSIGNED_INT(u64, -1.0, 0, UINT64_MAX));
+    IHC_CHECK(!IC_INNER_SAFE_FLOAT_TO_UNSIGNED_INT(u64, not_a_number, 0, UINT64_MAX));
+    IHC_CHECK(!IC_INNER_SAFE_FLOAT_TO_UNSIGNED_INT(u64, infinity, 0, UINT64_MAX));
+    IHC_CHECK(!IC_INNER_SAFE_FLOAT_TO_UNSIGNED_INT(u64, -infinity, 0, UINT64_MAX));
+
+    IHC_CHECK( IC_INNER_SAFE_FLOAT_TO_SIGNED_INT(i64, nextafter(two_pow_63, 0.0), INT64_MIN, INT64_MAX));
+    IHC_CHECK(!IC_INNER_SAFE_FLOAT_TO_SIGNED_INT(i64, two_pow_63, INT64_MIN, INT64_MAX));
+    IHC_CHECK(!IC_INNER_SAFE_FLOAT_TO_SIGNED_INT(i64, (f64)INT64_MAX, INT64_MIN, INT64_MAX));
+    IHC_CHECK( IC_INNER_SAFE_FLOAT_TO_SIGNED_INT(i64, -two_pow_63, INT64_MIN, INT64_MAX));
+    IHC_CHECK(!IC_INNER_SAFE_FLOAT_TO_SIGNED_INT(i64, nextafter(-two_pow_63, -infinity), INT64_MIN, INT64_MAX));
+    IHC_CHECK(!IC_INNER_SAFE_FLOAT_TO_SIGNED_INT(i64, not_a_number, INT64_MIN, INT64_MAX));
+    IHC_CHECK(!IC_INNER_SAFE_FLOAT_TO_SIGNED_INT(i64, infinity, INT64_MIN, INT64_MAX));
+    IHC_CHECK(!IC_INNER_SAFE_FLOAT_TO_SIGNED_INT(i64, -infinity, INT64_MIN, INT64_MAX));
+
+    // Fractions past an exact bound are out of range
+    IHC_CHECK( IC_INNER_SAFE_FLOAT_TO_SIGNED_INT(i8, 127.0, INT8_MIN, INT8_MAX));
+    IHC_CHECK(!IC_INNER_SAFE_FLOAT_TO_SIGNED_INT(i8, 127.5, INT8_MIN, INT8_MAX));
+    IHC_CHECK( IC_INNER_SAFE_FLOAT_TO_SIGNED_INT(i8, -128.0, INT8_MIN, INT8_MAX));
+    IHC_CHECK(!IC_INNER_SAFE_FLOAT_TO_SIGNED_INT(i8, -128.5, INT8_MIN, INT8_MAX));
+    IHC_CHECK(!IC_INNER_SAFE_FLOAT_TO_UNSIGNED_INT(u8, 255.5, 0, UINT8_MAX));
+    IHC_CHECK(!IC_INNER_SAFE_FLOAT_TO_UNSIGNED_INT(u8, -0.5, 0, UINT8_MAX));
+}
+IC_ENABLE_WARNINGS
+
 #endif // IRON_HAMMER_C_TESTS_NUM_CAST_TEST_H

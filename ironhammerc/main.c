@@ -78,6 +78,10 @@ int main(void) {
         IHC_TEST_ENTRY(verify_signed_integer_conversions_for_large_type_to_small_type),
         IHC_TEST_ENTRY(verify_unsigned_integer_conversions_for_large_type_to_small_type),
         IHC_TEST_ENTRY(verify_floating_point_conversions_for_large_type_to_small_type),
+        IHC_TEST_ENTRY(verify_floating_to_64_bit_integer_boundaries_are_exact),
+        IHC_TEST_ENTRY(verify_f32_to_32_bit_integer_boundaries_are_exact),
+        IHC_TEST_ENTRY(verify_floating_to_small_integer_boundaries_are_exact),
+        IHC_TEST_ENTRY(verify_floating_to_integer_assert_policy_rejects_out_of_range),
         // ic_opaque_storage.h
         IHC_TEST_ENTRY(verify_opaque_strict_object_can_be_initiated_with_zeroes),
         IHC_TEST_ENTRY(verify_opaque_strict_object_can_set_and_get_values),
