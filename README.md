@@ -1,6 +1,6 @@
 [Part of The Crucible C Project.](https://github.com/CrucibleC/CrucibleC)
 
-# IronCLib V1.0.0
+# IronCLib V1.0.1
 [![Tests](https://github.com/CrucibleC/IronCLib/actions/workflows/tests.yml/badge.svg)](https://github.com/CrucibleC/IronCLib/actions/workflows/tests.yml)
 
 IronCLib is a small, header-only C library for writing safer, more consistent C code.
