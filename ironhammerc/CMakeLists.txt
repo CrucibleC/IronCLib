@@ -10,9 +10,9 @@ set(COMPILER_NAME "" CACHE STRING "Expected compiler: gcc, clang or msvc (option
 
 # Fail if the compiler is not the one the run is labelled with
 set(_expected_ids_gcc "GNU")
-set(_expected_ids_clang "Clang")
+set(_expected_ids_clang "Clang|AppleClang")
 set(_expected_ids_msvc "MSVC")
-if (COMPILER_NAME AND NOT CMAKE_C_COMPILER_ID STREQUAL "${_expected_ids_${COMPILER_NAME}}")
+if (COMPILER_NAME AND NOT CMAKE_C_COMPILER_ID MATCHES "^(${_expected_ids_${COMPILER_NAME}})$")
     message(FATAL_ERROR "COMPILER_NAME=${COMPILER_NAME} but the compiler is ${CMAKE_C_COMPILER_ID}")
 endif()
 
@@ -69,8 +69,10 @@ target_compile_definitions(hammer_ironclib PRIVATE
     IHC_EXPECTED_OPTIMIZED=${_optimized}
 )
 
-# Strict ISO mode hides POSIX declarations (e.g. nanosleep) used by the pthread backend
-if (NOT WIN32)
+# Strict ISO mode makes glibc hide POSIX declarations (e.g. nanosleep) used by the pthread backend.
+# Apple's libc declares them by default, and defining _POSIX_C_SOURCE there would hide
+# Darwin-specific declarations instead, so macOS is left alone.
+if (NOT WIN32 AND NOT APPLE)
     target_compile_definitions(hammer_ironclib PRIVATE _POSIX_C_SOURCE=200809L)
 endif()
 

@@ -3,6 +3,7 @@ import os
 import shutil
 import re
 import json
+import sys
 
 # -----------------------------
 # Paths (portable)
@@ -11,6 +12,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BUILD_ROOT = os.path.join(BASE_DIR, "build")
 
 IS_WINDOWS = os.name == "nt"
+IS_MACOS = sys.platform == "darwin"
 EXE_NAME = "hammer_ironclib.exe" if IS_WINDOWS else "hammer_ironclib"
 
 # Optional future hook (disabled unless env var is set)
@@ -71,8 +73,10 @@ def find_visual_studio_generator():
 
 
 def find_compiler(name):
-    # Prefer plain "<name>", otherwise the highest versioned "<name>-N" on PATH
-    if shutil.which(name):
+    # Prefer plain "<name>", otherwise the highest versioned "<name>-N" on PATH.
+    # On macOS plain "gcc" is Apple clang in disguise, so only a versioned
+    # (e.g. Homebrew "gcc-14") gcc counts there.
+    if shutil.which(name) and not (IS_MACOS and name == "gcc"):
         return name
 
     best = None
@@ -82,11 +86,11 @@ def find_compiler(name):
     for path_dir in os.environ.get("PATH", "").split(os.pathsep):
         if not os.path.isdir(path_dir):
             continue
-        for name in os.listdir(path_dir):
-            match = pattern.match(name)
+        for entry in os.listdir(path_dir):
+            match = pattern.match(entry)
             if match and int(match.group(1)) > best_version:
                 best_version = int(match.group(1))
-                best = os.path.join(path_dir, name)
+                best = os.path.join(path_dir, entry)
 
     return best
 
@@ -121,9 +125,12 @@ tests = [
 # (compiler, std, opt, tag, defines)
 C11_THREADS = ["IC_USE_C11_THREADS_AND_ATOMICS"]
 
-# MinGW has no C11 <threads.h>, so on Windows the C11 backend is tested with MSVC (VS 2022 17.8+)
+# MinGW has no C11 <threads.h>, so on Windows the C11 backend is tested with MSVC (VS 2022 17.8+).
+# macOS has no <threads.h> at all, so the C11 backend is not tested there.
 if IS_WINDOWS:
     extra_tests = [("msvc", "c11", "-O2", "c11threads", C11_THREADS)]
+elif IS_MACOS:
+    extra_tests = []
 else:
     extra_tests = [("clang", "c11", "-O2", "c11threads", C11_THREADS)]
 
@@ -281,3 +288,6 @@ else:
 print(f"\nTotal: {len(successes) + len(failures)}")
 print(f"Passed: {len(successes)}")
 print(f"Failed: {len(failures)}")
+
+# Non-zero exit code so CI marks the run as failed
+sys.exit(1 if failures else 0)
