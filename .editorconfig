@@ -1,0 +1,6 @@
+# https://editorconfig.org
+root = true
+
+[*]
+# C99/C11 require source files to end with a newline (clang -Wpedantic flags it)
+insert_final_newline = true

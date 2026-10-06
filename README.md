@@ -1,6 +1,8 @@
 [Part of The Crucible C Project.](https://github.com/CrucibleC/CrucibleC)
 
-# IronCLib (Beta)
+# IronCLib V1.0.0
+[![Tests](https://github.com/CrucibleC/IronCLib/actions/workflows/tests.yml/badge.svg)](https://github.com/CrucibleC/IronCLib/actions/workflows/tests.yml)
+
 IronCLib is a small, header-only C library for writing safer, more consistent C code.
 
 It provides independent, composable utilities that address common pitfalls like unsafe casts, fragile headers, and inconsistent error handling. Each header works on its own, with no external setup required.
@@ -269,25 +271,29 @@ IronCLib is continuously tested on a build matrix covering multiple compilers, C
 
 All headers are verified against:
 
-| Compiler | C Standard | Optimization | Windows x86_64 | Linux x86_64 |
-|----------|-----------|-------------|----------------|--------------|
-| gcc      | C99       | O0          | Verified | Verified |
-| gcc      | C99       | O2          | Verified | Verified |
-| gcc      | C11       | O0          | Verified | Verified |
-| gcc      | C11       | O2          | Verified | Verified |
-| clang    | C99       | O0          | Verified | Verified |
-| clang    | C99       | O2          | Verified | Verified |
-| clang    | C11       | O0          | Verified | Verified |
-| clang    | C11       | O2          | Verified | Verified |
-| clang    | C11 + `IC_USE_C11_THREADS_AND_ATOMICS` | O2 | Not tested (MinGW has no `threads.h`) | Verified |
-| msvc     | C99       | O0 / O2     | Not applicable (MSVC has no C99 mode) | Not applicable |
-| msvc     | C11       | O0          | Verified | Not applicable |
-| msvc     | C11       | O2          | Verified | Not applicable |
-| msvc     | C11 + `IC_USE_C11_THREADS_AND_ATOMICS` | O2 | Verified (C11 threads, MSVC atomics; VS 2022 17.8+) | Not applicable |
+| Compiler | C Standard | Optimization | Windows x86_64 | Linux x86_64 | Linux ARM64 | macOS ARM64 |
+|----------|-----------|-------------|----------------|--------------|-------------|-------------|
+| gcc      | C99       | O0          | Verified | Verified | Verified | Verified |
+| gcc      | C99       | O2          | Verified | Verified | Verified | Verified |
+| gcc      | C11       | O0          | Verified | Verified | Verified | Verified |
+| gcc      | C11       | O2          | Verified | Verified | Verified | Verified |
+| clang    | C99       | O0          | Verified | Verified | Verified | Verified |
+| clang    | C99       | O2          | Verified | Verified | Verified | Verified |
+| clang    | C11       | O0          | Verified | Verified | Verified | Verified |
+| clang    | C11       | O2          | Verified | Verified | Verified | Verified |
+| clang    | C11 + `IC_USE_C11_THREADS_AND_ATOMICS` | O2 | N/A ¹ | Verified | Verified | N/A ² |
+| msvc     | C99       | O0 / O2     | N/A ³ | — | — | — |
+| msvc     | C11       | O0          | Verified | — | — | — |
+| msvc     | C11       | O2          | Verified | — | — | — |
+| msvc     | C11 + `IC_USE_C11_THREADS_AND_ATOMICS` | O2 | Verified ⁴ | — | — | — |
 
-Every build uses strict ISO mode (`-std=c99`/`-std=c11`, `/std:c11` on MSVC) with all warnings as errors, and the test binary fails to compile if its C standard or optimization level differs from the one it is labelled with. On Windows, gcc and clang are the MinGW (MSYS2) toolchains. Linux is tested under WSL2 with `_POSIX_C_SOURCE=200809L` defined.
+¹ MinGW has no `threads.h`. ² macOS has no `threads.h`. ³ MSVC has no C99 mode. ⁴ C11 threads with MSVC atomics; requires Visual Studio 2022 17.8 or newer.
+
+Every build uses strict ISO mode (`-std=c99`/`-std=c11`, `/std:c11` on MSVC) with all warnings as errors, and the test binary fails to compile if its C standard or optimization level differs from the one it is labelled with.
+
+- **Linux and macOS** are tested automatically with [GitHub Actions](.github/workflows/tests.yml) on every push to `main` and every pull request, using the runners' Ubuntu 24.04 gcc and clang, and Apple clang with Homebrew gcc on macOS.
+- **Windows** is verified locally (not in CI), with gcc and clang from MinGW (MSYS2) and MSVC from Visual Studio 2022.
 
 # TODO
-- To enter V1, test on Linux platform as well
 - Add AUTHORS file
 - Add C++ compatibility guards?
