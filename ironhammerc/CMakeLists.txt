@@ -76,6 +76,11 @@ if (NOT WIN32 AND NOT APPLE)
     target_compile_definitions(hammer_ironclib PRIVATE _POSIX_C_SOURCE=200809L)
 endif()
 
+# libm for <math.h> functions (nextafter, ldexp) used by the num cast tests
+if (UNIX AND NOT APPLE)
+    target_link_libraries(hammer_ironclib PRIVATE m)
+endif()
+
 if (CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(hammer_ironclib PRIVATE
         ${OPT_LEVEL}
