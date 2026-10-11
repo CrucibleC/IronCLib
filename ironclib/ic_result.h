@@ -28,7 +28,6 @@ C Compatibility:
 
 Dependencies:
 - ic_inline.h        -> IC_HEADER_FUNC
-- ic_static_assert.h -> optional compile-time checks
 
 Design:
 - Result<T,E> type
@@ -121,14 +120,15 @@ This macro generates:
 
 - early return on error
 - zero runtime overhead in optimized builds
+- result is evaluated more than once, so pass a variable, not a function call
 
 ==============================================================================
 */
 
 #define IC_TRY_RETURN_ERR_AS(return_type, result) \
     do { \
-        if (!result.ok) { \
-            return return_type##_err(result.data.error); \
+        if (!(result).ok) { \
+            return return_type##_err((result).data.error); \
         } \
     } while (0)
 

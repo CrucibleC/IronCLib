@@ -744,6 +744,15 @@ In this example, the idea is for **a single thread** to perform the setup and cl
 
 > *Note: `ic_mutex` is non-recursive. Locking a non-recursive mutex twice from the same thread will deadlock in most underlying implementations.*
 
+`ic_mutex_lock` and `ic_mutex_unlock` return nothing, because they can only fail on a programming error (for example an uninitialized or destroyed mutex, or unlocking a mutex the thread does not own), and the caller cannot safely continue either way. Such a failure calls `IC_CONCURRENCY_LOCK_PANIC(msg)`, which defaults to `abort()`. Define it before including the header to log first or hook into your own crash handling, but it should not return. Windows SRW locks cannot fail, so it never fires there.
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#define IC_CONCURRENCY_LOCK_PANIC(msg) do { fprintf(stderr, "%s\n", msg); abort(); } while (0)
+#include "ironclib/ic_concurrency.h"
+```
+
 #### Sleep
 A simple sleep function. It makes no guarantee for exact of sleep, but it is portable and always takes an int32_t argument as milliseconds to ensure same behavior across platforms and check for less-than-zero.
 

@@ -54,6 +54,14 @@ IC_CONCURRENCY_NULLPTR_PANIC(msg)
 Define this macro to customize the behavior when a null pointer is passed to a concurrency function. 
 By default, it does nothing, but you can set it to log an error, abort the program, or any other behavior you prefer.
 
+IC_CONCURRENCY_LOCK_PANIC(msg)
+Invoked when ic_mutex_lock or ic_mutex_unlock fails. This only happens on a programming error
+(e.g. an uninitialized or destroyed mutex, or unlocking a mutex the thread does not own), and the
+caller cannot safely continue, since it would run without holding the lock. Can only fire with the
+pthread and C11 backends, as Windows SRW locks cannot fail.
+By default, it calls abort(). Define it to log first, or to hook into your own crash handling.
+It should not return: if it does, the function returns without the lock held (or still locked).
+
 ATOMICS
 ----------------------------------------
 struct ic_atomic_i32;
@@ -103,8 +111,18 @@ IC_CONCURRENCY_ALREADY_LOCKED   4
 #include "ic_concurrency_backend.h"
 #include <stdint.h>
 
+#if defined(IC_THREAD_PTHREAD)
+    #include <time.h>  // nanosleep, struct timespec
+    #include <errno.h> // EINTR
+#endif
+
 #ifndef IC_CONCURRENCY_NULLPTR_PANIC
     #define IC_CONCURRENCY_NULLPTR_PANIC(msg) ((void)0)
+#endif
+
+#ifndef IC_CONCURRENCY_LOCK_PANIC
+    #include <stdlib.h> // abort
+    #define IC_CONCURRENCY_LOCK_PANIC(msg) abort()
 #endif
 
 // ==============================================================================
@@ -288,8 +306,6 @@ IC_HEADER_FUNC int ic_task_trampoline(void* arg)
 {
     ic_task* t = (ic_task*)arg;
 
-    ic_atomic_store(&t->UNSAFE_PRIVATE_ACCESS_IS_RUNNING, 1);
-
     t->UNSAFE_PRIVATE_ACCESS_RESULT =
         t->UNSAFE_PRIVATE_ACCESS_FUNCTION(t->UNSAFE_PRIVATE_ACCESS_ARGUMENT);
 
@@ -304,8 +320,6 @@ IC_HEADER_FUNC void* ic_task_trampoline(void* arg)
 {
     ic_task* t = (ic_task*)arg;
 
-    ic_atomic_store(&t->UNSAFE_PRIVATE_ACCESS_IS_RUNNING, 1);
-
     t->UNSAFE_PRIVATE_ACCESS_RESULT =
         t->UNSAFE_PRIVATE_ACCESS_FUNCTION(t->UNSAFE_PRIVATE_ACCESS_ARGUMENT);
 
@@ -319,8 +333,6 @@ IC_HEADER_FUNC void* ic_task_trampoline(void* arg)
 IC_HEADER_FUNC DWORD WINAPI ic_task_trampoline(LPVOID arg)
 {
     ic_task* t = (ic_task*)arg;
-
-    ic_atomic_store(&t->UNSAFE_PRIVATE_ACCESS_IS_RUNNING, 1);
 
     t->UNSAFE_PRIVATE_ACCESS_RESULT =
         t->UNSAFE_PRIVATE_ACCESS_FUNCTION(t->UNSAFE_PRIVATE_ACCESS_ARGUMENT);
@@ -339,6 +351,7 @@ IC_HEADER_FUNC int ic_task_init(ic_task* const out_t, const ic_task_function fun
 {
     if (!out_t || !func)
     {
+        IC_CONCURRENCY_NULLPTR_PANIC("ic_task_init: out_t or func is null");
         return IC_CONCURRENCY_NULLREF;
     }
 
@@ -346,24 +359,22 @@ IC_HEADER_FUNC int ic_task_init(ic_task* const out_t, const ic_task_function fun
     out_t->UNSAFE_PRIVATE_ACCESS_ARGUMENT = arg;
     out_t->UNSAFE_PRIVATE_ACCESS_RESULT = 0;
 
-    ic_atomic_init(&out_t->UNSAFE_PRIVATE_ACCESS_IS_RUNNING, 0);
+    // Marked running before the thread exists, so is_running/get_result can never
+    // observe a task that has not started yet as finished.
+    ic_atomic_init(&out_t->UNSAFE_PRIVATE_ACCESS_IS_RUNNING, 1);
     ic_atomic_init(&out_t->UNSAFE_PRIVATE_ACCESS_IS_JOINED, 0);
+
+    int created = 1;
 
 #if defined(IC_THREAD_C11)
 
-    if (thrd_create(&out_t->UNSAFE_PRIVATE_ACCESS_THREAD_HANDLE,
-                    ic_task_trampoline, out_t) != thrd_success)
-    {
-        return IC_CONCURRENCY_FAILURE;
-    }
+    created = (thrd_create(&out_t->UNSAFE_PRIVATE_ACCESS_THREAD_HANDLE,
+                           ic_task_trampoline, out_t) == thrd_success);
 
 #elif defined(IC_THREAD_PTHREAD)
 
-    if (pthread_create(&out_t->UNSAFE_PRIVATE_ACCESS_THREAD_HANDLE,
-                       NULL, ic_task_trampoline, out_t) != 0)
-    {
-        return IC_CONCURRENCY_FAILURE;
-    }
+    created = (pthread_create(&out_t->UNSAFE_PRIVATE_ACCESS_THREAD_HANDLE,
+                              NULL, ic_task_trampoline, out_t) == 0);
 
 #elif defined(IC_THREAD_WIN)
 
@@ -371,12 +382,17 @@ IC_HEADER_FUNC int ic_task_init(ic_task* const out_t, const ic_task_function fun
         CreateThread(NULL, 0, ic_task_trampoline, out_t, 0,
                      &out_t->UNSAFE_PRIVATE_ACCESS_THREAD_ID);
 
-    if (!out_t->UNSAFE_PRIVATE_ACCESS_THREAD_HANDLE)
-    {
-        return IC_CONCURRENCY_FAILURE;
-    }
+    created = (out_t->UNSAFE_PRIVATE_ACCESS_THREAD_HANDLE != NULL);
 
 #endif
+
+    if (!created)
+    {
+        // No thread exists, so there is nothing to wait for and nothing to join
+        ic_atomic_store(&out_t->UNSAFE_PRIVATE_ACCESS_IS_RUNNING, 0);
+        ic_atomic_store(&out_t->UNSAFE_PRIVATE_ACCESS_IS_JOINED, 1);
+        return IC_CONCURRENCY_FAILURE;
+    }
 
     return IC_CONCURRENCY_OK;
 }
@@ -389,12 +405,11 @@ IC_HEADER_FUNC int ic_task_join(ic_task* const t)
         return IC_CONCURRENCY_NULLREF;
     }
 
-    if (ic_atomic_load(&t->UNSAFE_PRIVATE_ACCESS_IS_JOINED) == 1)
+    // Atomic test-and-set, so two threads joining at once cannot both join the thread
+    if (ic_atomic_exchange(&t->UNSAFE_PRIVATE_ACCESS_IS_JOINED, 1) == 1)
     {
         return IC_CONCURRENCY_ALREADY_JOINED;
     }
-
-    ic_atomic_store(&t->UNSAFE_PRIVATE_ACCESS_IS_JOINED, 1);
 
 #if defined(IC_THREAD_C11)
     if (thrd_join(t->UNSAFE_PRIVATE_ACCESS_THREAD_HANDLE, NULL) != thrd_success)
@@ -514,11 +529,13 @@ IC_HEADER_FUNC void ic_mutex_lock(ic_mutex* const m)
 #if defined(IC_THREAD_C11)
     if (mtx_lock(&m->UNSAFE_PRIVATE_ACCESS_MUTEX) != thrd_success)
     {
+        IC_CONCURRENCY_LOCK_PANIC("ic_mutex_lock: failed to lock mutex");
         return;
     }
 #elif defined(IC_THREAD_PTHREAD)
     if (pthread_mutex_lock(&m->UNSAFE_PRIVATE_ACCESS_MUTEX) != 0)
     {
+        IC_CONCURRENCY_LOCK_PANIC("ic_mutex_lock: failed to lock mutex");
         return;
     }
 #elif defined(IC_THREAD_WIN)
@@ -569,9 +586,15 @@ IC_HEADER_FUNC void ic_mutex_unlock(ic_mutex* const m)
     }
 
 #if defined(IC_THREAD_C11)
-    mtx_unlock(&m->UNSAFE_PRIVATE_ACCESS_MUTEX);
+    if (mtx_unlock(&m->UNSAFE_PRIVATE_ACCESS_MUTEX) != thrd_success)
+    {
+        IC_CONCURRENCY_LOCK_PANIC("ic_mutex_unlock: failed to unlock mutex");
+    }
 #elif defined(IC_THREAD_PTHREAD)
-    pthread_mutex_unlock(&m->UNSAFE_PRIVATE_ACCESS_MUTEX);
+    if (pthread_mutex_unlock(&m->UNSAFE_PRIVATE_ACCESS_MUTEX) != 0)
+    {
+        IC_CONCURRENCY_LOCK_PANIC("ic_mutex_unlock: failed to unlock mutex");
+    }
 #elif defined(IC_THREAD_WIN)
     ReleaseSRWLockExclusive(&m->UNSAFE_PRIVATE_ACCESS_MUTEX);
 #endif
@@ -620,16 +643,28 @@ IC_HEADER_FUNC void ic_thread_sleep(const int32_t milliseconds)
 #if defined(IC_THREAD_C11)
 
     struct timespec ts;
+    struct timespec remaining;
     ts.tv_sec  = milliseconds / 1000;
     ts.tv_nsec = (milliseconds % 1000) * 1000000;
-    thrd_sleep(&ts, NULL);
+
+    // -1 means interrupted by a signal: keep sleeping for the remaining time
+    while (thrd_sleep(&ts, &remaining) == -1)
+    {
+        ts = remaining;
+    }
 
 #elif defined(IC_THREAD_PTHREAD)
 
     struct timespec ts;
+    struct timespec remaining;
     ts.tv_sec  = milliseconds / 1000;
     ts.tv_nsec = (milliseconds % 1000) * 1000000;
-    nanosleep(&ts, NULL);
+
+    // EINTR means interrupted by a signal: keep sleeping for the remaining time
+    while (nanosleep(&ts, &remaining) == -1 && errno == EINTR)
+    {
+        ts = remaining;
+    }
 
 #elif defined(IC_THREAD_WIN)
 

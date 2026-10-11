@@ -280,7 +280,8 @@ IC_HEADER_FUNC AppError pw_task_completion_wait(const PwTaskCompletion* const co
 
     uint32_t it = 0;
     int64_t elapsed_ms = 0;
-    int32_t current_sleep_ms = retry_period_ms;
+    // A zero period would never advance elapsed_ms (nor double), so the timeout could never fire
+    int32_t current_sleep_ms = (retry_period_ms > 0) ? retry_period_ms : 1;
 
     while (!pw_atomic_load(&completion->PRIVATE_completed))
     {
@@ -423,11 +424,6 @@ IC_HEADER_FUNC AppError pw_task_pool_close(PwTaskPool* const pool, const PwTaskP
 
     if (PwTaskPoolClose_eq(close_mode, PwTaskPoolClose_Drain))
     {
-        if (pw_atomic_load(&pool->PRIVATE_state) == PW_TASKPOOL_CLOSING_ABORT)
-        {
-            return AppError_InvalidState;
-        }
-
         set_state = PW_TASKPOOL_CLOSING_DRAIN;
     }
     else if (PwTaskPoolClose_eq(close_mode, PwTaskPoolClose_Abort))
@@ -439,7 +435,19 @@ IC_HEADER_FUNC AppError pw_task_pool_close(PwTaskPool* const pool, const PwTaskP
         return AppError_Argument;
     }
 
+    // The state changes under the pool mutex, the same lock submit checks it under,
+    // so no job can be queued after workers start deciding whether to exit.
+    pw_mutex_lock(&pool->PRIVATE_mutex);
+
+    if (set_state == PW_TASKPOOL_CLOSING_DRAIN && pw_atomic_load(&pool->PRIVATE_state) == PW_TASKPOOL_CLOSING_ABORT)
+    {
+        pw_mutex_unlock(&pool->PRIVATE_mutex);
+        return AppError_InvalidState;
+    }
+
     pw_atomic_store(&pool->PRIVATE_state, set_state);
+
+    pw_mutex_unlock(&pool->PRIVATE_mutex);
 
     for (uint32_t i = 0; i < pool->PRIVATE_worker_count; i++)
     {
@@ -557,8 +565,12 @@ IC_HEADER_FUNC AppError pw_task_pool_submit(PwTaskPool* const pool, const PwTask
         return AppError_NullRef;
     }
 
+    pw_mutex_lock(&pool->PRIVATE_mutex);
+
+    // Checked under the pool mutex, see pw_task_pool_close
     if (pw_atomic_load(&pool->PRIVATE_state) != PW_TASKPOOL_RUNNING)
     {
+        pw_mutex_unlock(&pool->PRIVATE_mutex);
         return AppError_InvalidState;
     }
 
@@ -566,8 +578,6 @@ IC_HEADER_FUNC AppError pw_task_pool_submit(PwTaskPool* const pool, const PwTask
     {
         pw_atomic_store(&out_completion->PRIVATE_completed, 0);
     }
-
-    pw_mutex_lock(&pool->PRIVATE_mutex);
 
     if (pool->PRIVATE_count >= PW_TASKPOOL_MAX_PENDING_TASKS)
     {
@@ -609,11 +619,17 @@ IC_HEADER_FUNC AppError pw_task_pool_destroy(PwTaskPool* const pool)
         return err;
     }
 
+    // Join every worker, but remember a failure from any of them, not just the last
+    AppError join_err = AppError_NoError;
     for (uint32_t i = 0; i < pool->PRIVATE_worker_count; i++)
     {
         err = pw_task_join(&pool->PRIVATE_workers[i]);
+        if (!AppError_eq(err, AppError_NoError))
+        {
+            join_err = err;
+        }
     }
-    if (!AppError_eq(err, AppError_NoError))
+    if (!AppError_eq(join_err, AppError_NoError))
     {
         return AppError_Irrecoverable;
     }

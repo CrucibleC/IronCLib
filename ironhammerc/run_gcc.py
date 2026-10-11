@@ -84,3 +84,6 @@ if not os.path.exists(EXE_PATH):
 result = subprocess.run([EXE_PATH])
 
 print(f"\nExit code: {result.returncode}")
+
+# Propagate the test result so callers (and CI) see failures
+sys.exit(result.returncode)

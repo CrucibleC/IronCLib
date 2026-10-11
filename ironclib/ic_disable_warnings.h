@@ -28,7 +28,7 @@
     __pragma(warning(disable: 4189))  /* unused variable */ \
     __pragma(warning(disable: 4056))  /* FP overflow */
 #define IC_ENABLE_WARNINGS \
-    __pragma(warning(pop));
+    __pragma(warning(pop))
 
 // Clang
 #elif defined(__clang__)

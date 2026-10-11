@@ -35,6 +35,7 @@ Purpose:
 - Preserve natural C loop semantics
 - Make loop safety explicit and readable in source code
 - Treat invalid (<= 0) loop bounds as zero iterations
+  (IC_BOUNDED_DO_WHILE still runs its body once, like a regular do-while)
 
 ===============================================================================
 */
@@ -95,8 +96,8 @@ Purpose:
 Safety guarantees:
 - Guaranteed single evaluation of max_loops
 - Hard upper bound on iterations
-- max_loops <= 0 results in zero iterations
-- First iteration is always executed unless max_loops is 0
+- The first iteration is always executed, even when max_loops <= 0
+- After that, max_loops <= 0 results in no further iterations
 - Fully predictable termination behavior
 
 Implementation notes:

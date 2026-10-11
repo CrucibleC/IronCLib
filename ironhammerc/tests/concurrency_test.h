@@ -197,6 +197,34 @@ IHC_TEST(verify_get_result_fails_if_task_running)
     ic_task_join(&task);
 }
 
+static int wait_for_release_thread(void* arg)
+{
+    ic_atomic_i32* release = (ic_atomic_i32*)arg;
+    while (ic_atomic_load(release) == 0)
+    {
+        ic_thread_sleep(1);
+    }
+    return 7;
+}
+
+IHC_TEST(verify_task_is_running_immediately_after_init)
+{
+    ic_atomic_i32 release = ic_make_atomic(0);
+    ic_task task;
+    IHC_ASSERT(ic_task_init(&task, wait_for_release_thread, &release) == IC_CONCURRENCY_OK);
+
+    // No sleep: the task must count as running even before its thread has been scheduled
+    IHC_CHECK(ic_task_is_running(&task) == 1);
+    int result = -1;
+    IHC_CHECK(ic_task_get_result(&task, &result) == IC_CONCURRENCY_FAILURE);
+
+    ic_atomic_store(&release, 1);
+    IHC_ASSERT(ic_task_join(&task) == IC_CONCURRENCY_OK);
+    IHC_CHECK(ic_task_is_running(&task) == 0);
+    IHC_CHECK(ic_task_get_result(&task, &result) == IC_CONCURRENCY_OK);
+    IHC_CHECK(result == 7);
+}
+
 typedef struct visibility_test_obj 
 {
     ic_atomic_i32 flag;

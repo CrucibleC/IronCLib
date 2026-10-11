@@ -67,6 +67,7 @@ static const Status Status_SoftwareFailure = {3};
 */
 
 #include "ic_inline.h"
+#include "ic_static_assert.h"
 #include "ic_glue_macro.h"
 
 /*

@@ -180,7 +180,7 @@ int foo()
 Lightweight and easy-to-use system for waiting on signals without using CPU (even for sleep).
 
 ```c
-#include "ironclib/ic_concurrency_signal"
+#include "ironclib/ic_concurrency_signal.h"
 
 // Thread 1A
 ic_gate_wait(&gate);
@@ -291,8 +291,10 @@ All headers are verified against:
 
 Every build uses strict ISO mode (`-std=c99`/`-std=c11`, `/std:c11` on MSVC) with all warnings as errors, and the test binary fails to compile if its C standard or optimization level differs from the one it is labelled with.
 
-- **Linux and macOS** are tested automatically with [GitHub Actions](.github/workflows/tests.yml) on every push to `main` and every pull request, using the runners' Ubuntu 24.04 gcc and clang, and Apple clang with Homebrew gcc on macOS.
-- **Windows** is verified locally (not in CI), with gcc and clang from MinGW (MSYS2) and MSVC from Visual Studio 2022.
+All platforms are tested automatically with [GitHub Actions](.github/workflows/tests.yml) on every push to `main` and every pull request:
+- **Linux** uses the runners' Ubuntu 24.04 gcc and clang.
+- **macOS** uses Apple clang and Homebrew gcc.
+- **Windows** uses gcc and clang from MinGW (MSYS2 UCRT64) and MSVC from the runner's Visual Studio.
 
 # TODO
 - Add AUTHORS file

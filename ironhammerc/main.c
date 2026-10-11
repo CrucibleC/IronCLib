@@ -82,6 +82,8 @@ int main(void) {
         IHC_TEST_ENTRY(verify_f32_to_32_bit_integer_boundaries_are_exact),
         IHC_TEST_ENTRY(verify_floating_to_small_integer_boundaries_are_exact),
         IHC_TEST_ENTRY(verify_floating_to_integer_assert_policy_rejects_out_of_range),
+        IHC_TEST_ENTRY(verify_integer_casts_clamp_to_custom_ranges),
+        IHC_TEST_ENTRY(verify_floating_casts_clamp_to_custom_ranges),
         // ic_opaque_storage.h
         IHC_TEST_ENTRY(verify_opaque_strict_object_can_be_initiated_with_zeroes),
         IHC_TEST_ENTRY(verify_opaque_strict_object_can_set_and_get_values),
@@ -104,6 +106,7 @@ int main(void) {
         IHC_TEST_ENTRY(verify_mutex_prevents_race_conditions),
         IHC_TEST_ENTRY(verify_task_cannot_be_joined_twice),
         IHC_TEST_ENTRY(verify_get_result_fails_if_task_running),
+        IHC_TEST_ENTRY(verify_task_is_running_immediately_after_init),
         IHC_TEST_ENTRY(verify_memory_visibility_with_atomics),
         IHC_TEST_ENTRY(verify_mutex_trylock_fails_under_contention),
         // ic_concurrency_signal.h
@@ -118,6 +121,7 @@ int main(void) {
         IHC_TEST_ENTRY(verify_broadcast_wakes_all_waiters),
         IHC_TEST_ENTRY(verify_broadcast_is_sticky_until_reset),
         IHC_TEST_ENTRY(verify_broadcast_reset_blocks_new_waiters),
+        IHC_TEST_ENTRY(verify_broadcast_signal_then_reset_wakes_current_waiters),
         #if RUN_STRESS_TESTS
         IHC_TEST_ENTRY(stress_gate_interleave_deterministic),
         IHC_TEST_ENTRY(stress_gate_signal_before_wait_deterministic),
@@ -140,7 +144,7 @@ int main(void) {
         #if RUN_STRESS_TESTS
         IHC_TEST_ENTRY(stress_task_pool_handles_high_contention_submissions),
         IHC_TEST_ENTRY(stress_task_pool_survives_shutdown_submission_races),
-        IHC_TEST_ENTRY(stress_task_pool_survives_repeated_lifecycle_cycles)
+        IHC_TEST_ENTRY(stress_task_pool_survives_repeated_lifecycle_cycles),
         #endif
         // ic_co_job.h
         IHC_TEST_ENTRY(verify_co_job_add_detects_nullptr_and_too_many_steps),
@@ -164,5 +168,6 @@ int main(void) {
     IHC_RUN(iron_c_lib_tests);
     IHC_REPORT();
 
-    return ihc_failures();
+    // Exit codes are truncated to 8 bits on most platforms, so 256 failures would read as success
+    return (ihc_failures() == 0) ? 0 : 1;
 }

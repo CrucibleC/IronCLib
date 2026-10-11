@@ -388,6 +388,42 @@ IHC_TEST(verify_broadcast_reset_blocks_new_waiters)
     ic_mutex_destroy(&data.mutex);
 }
 
+IHC_TEST(verify_broadcast_signal_then_reset_wakes_current_waiters)
+{
+    broadcast_test_data data = {0};
+
+    IHC_ASSERT(ic_broadcast_init(&data.broadcast) == IC_CONCURRENCY_OK);
+    IHC_ASSERT(ic_mutex_init(&data.mutex) == IC_CONCURRENCY_OK);
+
+    ic_task t1, t2;
+    IHC_ASSERT(ic_task_init(&t1, broadcast_waiter_thread, &data) == IC_CONCURRENCY_OK);
+    IHC_ASSERT(ic_task_init(&t2, broadcast_waiter_thread, &data) == IC_CONCURRENCY_OK);
+
+    ic_thread_sleep(100); // let both waiters block
+
+    // Pulse: waiters that were blocked during the signal must wake even though the reset follows at once
+    IHC_CHECK(ic_broadcast_signal_all(&data.broadcast) == IC_CONCURRENCY_OK);
+    IHC_CHECK(ic_broadcast_reset(&data.broadcast) == IC_CONCURRENCY_OK);
+
+    int woken = 0;
+    for (int i = 0; i < 2000 && woken < 2; i++)
+    {
+        ic_mutex_lock(&data.mutex);
+        woken = data.wake_count;
+        ic_mutex_unlock(&data.mutex);
+        ic_thread_sleep(1);
+    }
+    IHC_CHECK(woken == 2);
+
+    // Release any waiter a regression left blocked, so the test fails instead of hanging
+    ic_broadcast_signal_all(&data.broadcast);
+    ic_task_join(&t1);
+    ic_task_join(&t2);
+
+    ic_broadcast_destroy(&data.broadcast);
+    ic_mutex_destroy(&data.mutex);
+}
+
 // ==============================================================================
 // STRESS TESTS
 // ==============================================================================
@@ -1091,6 +1127,11 @@ IHC_TEST(verify_task_pool_reaches_timeout_for_blocking_tasks)
     // If the close call doesn't time out correctly, this test will hang instead of fail
     IHC_CHECK(AppError_eq(
         pw_task_completion_wait(&first_completion, 1, 100),
+        AppError_Timeout
+    ));
+    // A zero retry period must still time out instead of spinning forever
+    IHC_CHECK(AppError_eq(
+        pw_task_completion_wait(&first_completion, 0, 50),
         AppError_Timeout
     ));
     IHC_CHECK(AppError_eq(

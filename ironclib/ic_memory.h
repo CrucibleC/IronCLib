@@ -124,6 +124,7 @@ Purpose:
 Notes:
 - Macro is responsible for sanitizing signed input
 - Function assumes valid size_t inputs only
+- size is evaluated more than once, so avoid side effects (e.g. n++)
 
 Example:
     int *arr = IC_MALLOC_ARRAY(int, n);

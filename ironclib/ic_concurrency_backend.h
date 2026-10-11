@@ -30,7 +30,7 @@
     #endif
 #elif defined(_WIN32)
     #define IC_THREAD_WIN
-    #include <Windows.h>
+    #include <windows.h>
 #elif defined(__unix__) || defined(__APPLE__)
     // In strict ISO mode (-std=c99/c11) glibc hides POSIX functions such as nanosleep.
     // Compile with _POSIX_C_SOURCE=200809L (or higher) defined before any system header.
@@ -47,7 +47,7 @@
     #define IC_ATOMIC_GCC
 #elif defined(_MSC_VER)
     #define IC_ATOMIC_MSVC
-    #include <Windows.h>
+    #include <windows.h>
 #else
     #error "IC_CONCURRENCY ERROR: No supported atomic backend (C11 atomics / GCC built-ins / MSVC Interlocked)."
 #endif

@@ -58,7 +58,7 @@ HOW TO USE
     };
     typedef struct ColorImpl ColorImpl;
 
-    IC_OPAQUE_IMPL_ASSERT(Color, COLOR_ALIGN, COLOR_SIZE)
+    IC_OPAQUE_IMPL_ASSERT(ColorImpl, COLOR_ALIGN, COLOR_SIZE)
 
     void color_init(Color* c, int r, int g, int b) {
         ColorImpl* real = (ColorImpl*)c;
@@ -85,6 +85,9 @@ IMPORTANT RULES
 2) NEVER expose struct fields in headers
 3) alignment must be <= alignof(max_align_t) for portability
 4) access data only via implementation (casting internally)
+5) pass the Impl struct (not the opaque type) to IC_OPAQUE_IMPL_ASSERT
+6) casting is the fast path; under strict aliasing rules memcpy between the
+   opaque bytes and a local Impl is the fully portable alternative
 
 ===============================================================================
 */
