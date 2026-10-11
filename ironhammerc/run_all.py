@@ -15,7 +15,9 @@ IS_WINDOWS = os.name == "nt"
 IS_MACOS = sys.platform == "darwin"
 EXE_NAME = "hammer_ironclib.exe" if IS_WINDOWS else "hammer_ironclib"
 
-# Optional future hook (disabled unless env var is set)
+# Optional sanitizers, passed to CMakeLists.txt (disabled unless env var is set).
+# e.g. SANITIZERS=address,undefined or SANITIZERS=thread (gcc/clang); MSVC supports only "address".
+# Not every toolchain ships the runtimes (MinGW gcc/clang mostly do not), so a missing one fails the build.
 SANITIZERS = os.environ.get("SANITIZERS", "")
 
 # -----------------------------

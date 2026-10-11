@@ -33,6 +33,17 @@ jobs:
             os: macos-latest
           - name: Windows x86_64
             os: windows-latest
+          # Sanitizer runs (Linux only; MinGW and Apple toolchains lack some runtimes).
+          # ThreadSanitizer cannot be combined with AddressSanitizer, so it gets its own run.
+          - name: Linux x86_64 (ASan + UBSan)
+            os: ubuntu-latest
+            sanitizers: address,undefined
+          - name: Linux x86_64 (TSan)
+            os: ubuntu-latest
+            sanitizers: thread
+
+    env:
+      SANITIZERS: ${{ matrix.sanitizers }} # empty for normal runs, read by run_all.py
 
     steps:
       - name: Check out repository
@@ -49,6 +60,12 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc clang cmake ninja-build
+
+      # Recent runner kernels use more mmap randomization bits than the sanitizer runtimes
+      # support, which makes them fail at startup ("unexpected memory mapping")
+      - name: Reduce ASLR entropy for sanitizers (Linux)
+        if: runner.os == 'Linux' && matrix.sanitizers
+        run: sudo sysctl -w vm.mmap_rnd_bits=28
 
       - name: Install build tools (macOS)
         if: runner.os == 'macOS'

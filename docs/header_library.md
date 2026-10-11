@@ -1121,6 +1121,12 @@ This creates a deterministic cooperative scheduling model without preemption or 
 - Do not rely on exact scheduling order unless you control all priorities and weights.
 - Do not use long-running steps; jobs are intended to be small and incremental.
 - Do not modify job state externally while it is being scheduled unless explicitly designed for it.
+- Do not let a job or its data go out of scope while it is scheduled. The scheduler stores a pointer to the job, not a copy, so the job (and its data) must outlive the scheduling, e.g. by being static or living in the same scope as the scheduler.
+- Do not add steps to a job while it is scheduled.
+- Do not expect `IC_MAKE_CO_JOB` to take more than 10 steps, even if `IC_CO_MAX_STEPS` is raised. Build larger jobs with `ic_make_co_job` and `ic_co_job_add_step`.
+- Do not use a weight above `IC_CO_MAX_STEPS` or a negative priority. `ic_co_scheduler_add_job` rejects them (through `IC_CO_BAD_CALL_CAPTURE`) and the job is not added.
+
+`ic_co_scheduler_is_done` reports true right after the tick that runs the last remaining step, so a `while (!ic_co_scheduler_is_done(&s)) { ic_co_scheduler_tick(&s); }` loop does no extra empty tick.
 
 ### Why this design?
 `ic_co_job` consists of multiple `ic_co_step` functions using the signature `void step_func(void* data)`. Other coroutine-style designs were considered, such as a single linear function using a signature such as `void step_func(int step, void* data, int* is_done)` or a dynamic state-machine approach using something such as `void step_func(void* data, step_func* next_step)`. These are valid designs with their own benefits, but IronCLib prioritizes safety and predictability over flexibility.

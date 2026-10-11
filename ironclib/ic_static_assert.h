@@ -23,8 +23,8 @@ IC Static Assert
 
 C Version Compatibility:
 - C11+: uses _Static_assert
-- MSVC: uses static_assert
-- Pre-C11: fallback extern array trick
+- C++11+ (and MSVC C++ since VS2010): uses static_assert
+- Pre-C11 C (including MSVC without /std:c11): fallback extern array trick
 
 Usage:
     IC_STATIC_ASSERT(sizeof(int) == 4, "int must be 4 bytes");
@@ -37,8 +37,10 @@ For compilers without native static assert support, this will cause a compile-ti
 
     #define IC_STATIC_ASSERT(cond, msg) _Static_assert(cond, msg)
 
-#elif defined(_MSC_VER) && _MSC_VER >= 1600
+#elif defined(__cplusplus) && (__cplusplus >= 201103L || (defined(_MSC_VER) && _MSC_VER >= 1600))
 
+    // static_assert is a C++ keyword, but not available in C before C11 (MSVC included).
+    // MSVC reports __cplusplus as 199711L unless /Zc:__cplusplus is set, hence the _MSC_VER check.
     #define IC_STATIC_ASSERT(cond, msg) static_assert(cond, msg)
 
 #else

@@ -139,6 +139,7 @@ int main(void) {
         IHC_TEST_ENTRY(verify_task_pool_close_drain_completes_all_tasks),
         IHC_TEST_ENTRY(verify_task_pool_close_abort_drops_queued_tasks),
         IHC_TEST_ENTRY(verify_task_pool_reaches_timeout_for_blocking_tasks),
+        IHC_TEST_ENTRY(verify_task_pool_abort_marks_queued_completions_as_interrupted),
         IHC_TEST_ENTRY(verify_task_pool_can_safely_be_destroyed_without_manually_closing),
         IHC_TEST_ENTRY(verify_task_pool_can_fill_up_and_safely_reject_excess_tasks),
         #if RUN_STRESS_TESTS

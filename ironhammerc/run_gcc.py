@@ -1,4 +1,5 @@
 import os
+import re
 import subprocess
 import shutil
 import sys
@@ -49,6 +50,38 @@ def get_cmake_generator():
 GENERATOR = get_cmake_generator()
 
 # -------------------------------------------------
+# Find gcc (same rules as run_all.py)
+# -------------------------------------------------
+def find_gcc():
+    # Prefer plain "gcc", otherwise the highest versioned "gcc-N" on PATH.
+    # On macOS plain "gcc" is Apple clang in disguise, so only a versioned
+    # (e.g. Homebrew "gcc-14") gcc counts there.
+    if shutil.which("gcc") and sys.platform != "darwin":
+        return "gcc"
+
+    best = None
+    best_version = -1
+    pattern = re.compile(r"^gcc-(\d+)(\.exe)?$")
+
+    for path_dir in os.environ.get("PATH", "").split(os.pathsep):
+        if not os.path.isdir(path_dir):
+            continue
+        for entry in os.listdir(path_dir):
+            match = pattern.match(entry)
+            if match and int(match.group(1)) > best_version:
+                best_version = int(match.group(1))
+                best = os.path.join(path_dir, entry)
+
+    return best
+
+GCC = find_gcc()
+if not GCC:
+    print("gcc not found on PATH")
+    sys.exit(1)
+
+print(f"Using gcc: {GCC}")
+
+# -------------------------------------------------
 # Configure CMake
 # -------------------------------------------------
 print("Configuring CMake...")
@@ -58,6 +91,8 @@ subprocess.check_call([
     "-S", BASE_DIR,
     "-B", BUILD_DIR,
     "-G", GENERATOR,
+    f"-DCMAKE_C_COMPILER={GCC}",
+    "-DCOMPILER_NAME=gcc", # makes CMake fail if the compiler is not really gcc
     "-DC_STD=c11",
     "-DOPT_LEVEL=-O2",
 ])

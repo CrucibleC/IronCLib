@@ -262,20 +262,17 @@ IHC_TEST(verify_scheduler_correctlty_ticks_and_runs_one_job)
     ic_co_scheduler_add_job(&sched, co_job_7_steps(), &test_data, 1, weight);
 
     int step = 0;
-    while (!ic_co_scheduler_is_done(&sched))
+    while (!ic_co_scheduler_is_done(&sched) && step < 7) // bounded so a regression cannot overrun expected_credits
     {
         ic_co_scheduler_tick(&sched);
-        
-        
-        if (!ic_co_scheduler_is_done(&sched))
-        {
-            IHC_CHECK(ic_co_scheduler_credits(&sched) == expected_credits[step]);
-            step++;
-            IHC_CHECK(test_data.step == step);
-        }
 
+        IHC_CHECK(ic_co_scheduler_credits(&sched) == expected_credits[step]);
+        step++;
+        IHC_CHECK(test_data.step == step);
     }
 
+    // Done is reported by the tick that runs the last step, with no extra empty tick needed
+    IHC_CHECK(step == 7);
     IHC_CHECK(test_data.step == 7);
     for (int i = 0; i < IC_CO_MAX_STEPS; i++)
     {

@@ -49,6 +49,12 @@ IC_USE_C11_THREADS_AND_ATOMICS
 Define this before including the header to use C11 threads and atomics if available. 
 The library will fall back to other implementations if C11 is not supported, but if C11 is used
 it will assume a fully implemented C11 threads and atomics library is available and will not compile if it is not.
+Every translation unit must agree on this tag, since it changes the layout of the structs below.
+
+IC_INCLUDE_FULL_WINDOWS_H
+On Windows, windows.h is included with WIN32_LEAN_AND_MEAN and NOMINMAX (both removed again afterwards),
+so the min/max macros and rarely used Win32 APIs do not leak into user code. Define this tag before
+including the header to get the full windows.h instead, or include windows.h yourself before IronCLib.
 
 IC_CONCURRENCY_NULLPTR_PANIC(msg)
 Define this macro to customize the behavior when a null pointer is passed to a concurrency function. 

@@ -7,6 +7,7 @@ project(PortabilityTest C)
 set(C_STD "c11" CACHE STRING "C standard: c99 or c11")
 set(OPT_LEVEL "-O0" CACHE STRING "Optimization level: -O0 or -O2")
 set(COMPILER_NAME "" CACHE STRING "Expected compiler: gcc, clang or msvc (optional)")
+set(SANITIZERS "" CACHE STRING "Sanitizers to enable, e.g. address,undefined or thread (MSVC: address only)")
 
 # Fail if the compiler is not the one the run is labelled with
 set(_expected_ids_gcc "GNU")
@@ -102,4 +103,24 @@ if (MSVC)
         /WX
         /wd4127  # macro pattern (do { } while(0))
     )
+endif()
+
+# Sanitizers (set by run_all.py from the SANITIZERS environment variable)
+if (SANITIZERS)
+    if (CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
+        # -fno-sanitize-recover makes UBSan findings fail the run instead of only printing
+        target_compile_options(hammer_ironclib PRIVATE
+            -fsanitize=${SANITIZERS}
+            -fno-sanitize-recover=all
+            -fno-omit-frame-pointer
+        )
+        target_link_options(hammer_ironclib PRIVATE -fsanitize=${SANITIZERS})
+    elseif (MSVC)
+        if (NOT SANITIZERS STREQUAL "address")
+            message(FATAL_ERROR "MSVC only supports SANITIZERS=address, got '${SANITIZERS}'")
+        endif()
+        target_compile_options(hammer_ironclib PRIVATE /fsanitize=address)
+    else()
+        message(FATAL_ERROR "SANITIZERS is not supported for compiler ${CMAKE_C_COMPILER_ID}")
+    endif()
 endif()

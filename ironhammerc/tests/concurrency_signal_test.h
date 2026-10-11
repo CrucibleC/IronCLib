@@ -925,7 +925,7 @@ IHC_TEST(verify_task_pool_rejects_null_arguments)
     IHC_CHECK(AppError_eq(pw_task_pool_submit(&pool, do_nothing, NULL, &completion), AppError_NoError));
     IHC_ASSERT(AppError_eq(pw_task_completion_wait(NULL, 1, TASK_TEST_WAIT_TIMEOUT), AppError_NullRef));
     IHC_ASSERT(AppError_eq(pw_task_completion_wait(&completion, -1, TASK_TEST_WAIT_TIMEOUT), AppError_Argument));
-    IHC_ASSERT(AppError_eq(pw_task_completion_wait(&completion, 1, -1), AppError_Argument));
+    IHC_ASSERT(AppError_eq(pw_task_completion_wait(&completion, 1, -2), AppError_Argument)); // -1 is PW_TASK_COMPLETION_WAIT_FOREVER
 
     IHC_ASSERT(AppError_eq(pw_task_pool_close(&pool, PwTaskPoolClose_Abort, TASK_TEST_WAIT_TIMEOUT), AppError_NoError));
     IHC_CHECK(AppError_eq(pw_task_pool_destroy(&pool), AppError_NoError));
@@ -1134,6 +1134,11 @@ IHC_TEST(verify_task_pool_reaches_timeout_for_blocking_tasks)
         pw_task_completion_wait(&first_completion, 0, 50),
         AppError_Timeout
     ));
+    // A zero timeout only checks once
+    IHC_CHECK(AppError_eq(
+        pw_task_completion_wait(&first_completion, 1, 0),
+        AppError_Timeout
+    ));
     IHC_CHECK(AppError_eq(
         pw_task_pool_close(&pool, PwTaskPoolClose_Drain, 100),
         AppError_Timeout
@@ -1151,6 +1156,43 @@ IHC_TEST(verify_task_pool_reaches_timeout_for_blocking_tasks)
         AppError_NoError
     ));
 
+    IHC_CHECK(AppError_eq(pw_task_pool_destroy(&pool), AppError_NoError));
+    IHC_CHECK(ic_broadcast_destroy(&broadcast) == IC_CONCURRENCY_OK);
+}
+
+IHC_TEST(verify_task_pool_abort_marks_queued_completions_as_interrupted)
+{
+    PwTaskPool pool;
+    IHC_ASSERT(AppError_eq(pw_task_pool_init(&pool, TASKPOOL_THREADS), AppError_NoError));
+    ic_broadcast broadcast;
+    IHC_ASSERT(ic_broadcast_init(&broadcast) == IC_CONCURRENCY_OK);
+
+    // Occupy every worker, so the last task can only ever be queued, never running
+    for (int i = 0; i < TASKPOOL_THREADS; i++)
+    {
+        IHC_ASSERT(AppError_eq(
+            pw_task_pool_submit(&pool, worker_stuck_until_signaled, &broadcast, NULL),
+            AppError_NoError
+        ));
+    }
+    PwTaskCompletion queued_completion;
+    IHC_ASSERT(AppError_eq(
+        pw_task_pool_submit(&pool, worker_stuck_until_signaled, &broadcast, &queued_completion),
+        AppError_NoError
+    ));
+
+    // The close itself times out on the stuck active tasks, but must drop the queued one at once
+    (void)pw_task_pool_close(&pool, PwTaskPoolClose_Abort, 0);
+    IHC_CHECK(AppError_eq(
+        pw_task_completion_wait(&queued_completion, 1, 0),
+        AppError_Interrupted
+    ));
+
+    IHC_ASSERT(ic_broadcast_signal_all(&broadcast) == IC_CONCURRENCY_OK);
+    IHC_ASSERT(AppError_eq(
+        pw_task_pool_close(&pool, PwTaskPoolClose_Abort, PW_TASK_COMPLETION_WAIT_FOREVER),
+        AppError_NoError
+    ));
     IHC_CHECK(AppError_eq(pw_task_pool_destroy(&pool), AppError_NoError));
     IHC_CHECK(ic_broadcast_destroy(&broadcast) == IC_CONCURRENCY_OK);
 }

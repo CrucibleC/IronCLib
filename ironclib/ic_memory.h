@@ -60,6 +60,11 @@ Alignment support
     #define IC_ALIGNAS(x) _Alignas(x)
     #define IC_ALIGNOF(x) _Alignof(x)
 
+#elif defined(__cplusplus) && __cplusplus >= 201103L
+
+    #define IC_ALIGNAS(x) alignas(x)
+    #define IC_ALIGNOF(x) alignof(x)
+
 #elif defined(_MSC_VER)
 
     #define IC_ALIGNAS(x) __declspec(align(x))
@@ -70,11 +75,19 @@ Alignment support
     #define IC_ALIGNAS(x) __attribute__((aligned(x)))
     #define IC_ALIGNOF(x) __alignof__(x)
 
+#elif defined(__cplusplus)
+
+    #error "IC_ALIGNOF requires C++11, or a compiler with alignment extensions (MSVC / GCC / Clang)"
+
 #else
 
+    // Pre-C11 C on an unknown compiler: no way to force alignment, but it can still be measured.
+    // In struct { char c; T m; }, common ABIs place m at offset alignof(T) and end the struct right after it
+    // (sizeof(T) is a multiple of alignof(T)), so the size difference is exactly alignof(T).
+    // This avoids defining a type inside offsetof, which C23 makes undefined behavior.
     #define IC_ALIGNAS_IS_BLANK
     #define IC_ALIGNAS(x)
-    #define IC_ALIGNOF(x) (offsetof(struct { ic_byte c; x member; }, member))
+    #define IC_ALIGNOF(x) (sizeof(struct { ic_byte c; x member; }) - sizeof(x))
 
 #endif
 

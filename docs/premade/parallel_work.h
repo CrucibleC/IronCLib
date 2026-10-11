@@ -23,8 +23,13 @@
     do { fprintf(stderr, "[CONCURRENCY] NULLPTR: %s\n", msg); } while (0)
 #endif
 
-#define PW_USE_C11_THREADING 0 // Set to 1 to use C11 threads and atomics, otherwise will use platform-specific backends (Win / pthreads)
-#if PW_USE_C11_THREADING
+// Set to 1 (e.g. -DPW_USE_C11_THREADING=1 for the whole build) to use C11 threads and atomics,
+// otherwise platform-specific backends (Win / pthreads) are used. It must be the same in every
+// translation unit, and is ignored if an IronCLib concurrency header was already included first.
+#ifndef PW_USE_C11_THREADING
+#define PW_USE_C11_THREADING 0
+#endif
+#if PW_USE_C11_THREADING && !defined(IC_USE_C11_THREADS_AND_ATOMICS)
     #define IC_USE_C11_THREADS_AND_ATOMICS
 #endif
 
@@ -112,6 +117,11 @@ IC_HEADER_FUNC AppError pw_broadcast_destroy(PwBroadcast* const broadcast)      
 
 // typedef struct PwTaskCompletion PwTaskCompletion;
 // AppError pw_task_completion_wait(const PwTaskCompletion* const completion, const int32_t retry_period_ms, const int64_t timeout_ms);
+//     timeout_ms: PW_TASK_COMPLETION_WAIT_FOREVER (-1) waits forever, 0 only checks once (no sleep)
+//     returns AppError_NoError when the task ran, AppError_Interrupted when it was dropped by an abort close
+//     (it will never run), and AppError_Timeout when the timeout passed first
+// AppError pw_task_pool_close(PwTaskPool* const pool, const PwTaskPoolClose close_mode, const int64_t timeout_ms);
+//     Drain runs every queued task first, Abort drops queued tasks (marking their completions as interrupted)
 
 // ==============================================================================
 // TASK POOL IMPLEMENTATION
@@ -134,6 +144,11 @@ typedef enum PwTaskPoolState
     PW_TASKPOOL_CLOSING_ABORT = 2
 
 } PwTaskPoolState;
+
+// Values of PwTaskCompletion.PRIVATE_completed
+#define PW_TASK_COMPLETION_PENDING   0
+#define PW_TASK_COMPLETION_DONE      1
+#define PW_TASK_COMPLETION_CANCELLED 2 // dropped from the queue by an abort close, never ran
 
 typedef struct PwTaskCompletion
 {
@@ -221,7 +236,7 @@ static int PRIVATE_pw_task_pool_worker_main(void* arg)
 
         if (job.PRIVATE_completion)
         {
-            pw_atomic_store(&job.PRIVATE_completion->PRIVATE_completed, 1);
+            pw_atomic_store(&job.PRIVATE_completion->PRIVATE_completed, PW_TASK_COMPLETION_DONE);
         }
 
         (void)pw_atomic_fetch_add(&p->PRIVATE_active_jobs, -1);
@@ -240,9 +255,15 @@ static int PRIVATE_pw_task_pool_worker_main(void* arg)
 // COMPLETION WAIT
 // ==============================================================================
 
+// Timeout value meaning "no timeout". A timeout of 0 means "check once, without sleeping".
 #ifndef PW_TASK_COMPLETION_WAIT_FOREVER
-#define PW_TASK_COMPLETION_WAIT_FOREVER 0
+#define PW_TASK_COMPLETION_WAIT_FOREVER (-1)
 #endif
+
+IC_HEADER_FUNC AppError PRIVATE_pw_task_completion_result(const int32_t completion_state)
+{
+    return (completion_state == PW_TASK_COMPLETION_CANCELLED) ? AppError_Interrupted : AppError_NoError;
+}
 
 IC_HEADER_FUNC AppError pw_task_completion_wait(const PwTaskCompletion* const completion, const int32_t retry_period_ms, const int64_t timeout_ms)
 {
@@ -257,7 +278,7 @@ IC_HEADER_FUNC AppError pw_task_completion_wait(const PwTaskCompletion* const co
         return AppError_Argument;
     }
 
-    if (timeout_ms < 0)
+    if (timeout_ms < 0 && timeout_ms != PW_TASK_COMPLETION_WAIT_FOREVER)
     {
         return AppError_Argument;
     }
@@ -268,9 +289,10 @@ IC_HEADER_FUNC AppError pw_task_completion_wait(const PwTaskCompletion* const co
 
     for (uint32_t i = 0; i < 128; i++)
     {
-        if (pw_atomic_load(&completion->PRIVATE_completed))
+        const int32_t state = pw_atomic_load(&completion->PRIVATE_completed);
+        if (state != PW_TASK_COMPLETION_PENDING)
         {
-            return AppError_NoError;
+            return PRIVATE_pw_task_completion_result(state);
         }
     }
 
@@ -283,26 +305,26 @@ IC_HEADER_FUNC AppError pw_task_completion_wait(const PwTaskCompletion* const co
     // A zero period would never advance elapsed_ms (nor double), so the timeout could never fire
     int32_t current_sleep_ms = (retry_period_ms > 0) ? retry_period_ms : 1;
 
-    while (!pw_atomic_load(&completion->PRIVATE_completed))
+    int32_t state = PW_TASK_COMPLETION_PENDING;
+
+    while ((state = pw_atomic_load(&completion->PRIVATE_completed)) == PW_TASK_COMPLETION_PENDING)
     {
+        // Checked before sleeping, so a timeout of 0 only checks once
+        if (timeout_ms != PW_TASK_COMPLETION_WAIT_FOREVER && elapsed_ms >= timeout_ms)
+        {
+            return AppError_Timeout;
+        }
+
         pw_thread_sleep_milliseconds(current_sleep_ms);
 
-        if (timeout_ms != PW_TASK_COMPLETION_WAIT_FOREVER)
+        // Saturating overflow-safe accumulation
+        if (elapsed_ms > INT64_MAX - current_sleep_ms)
         {
-            // Saturating overflow-safe accumulation
-            if (elapsed_ms > INT64_MAX - current_sleep_ms)
-            {
-                elapsed_ms = INT64_MAX;
-            }
-            else
-            {
-                elapsed_ms += current_sleep_ms;
-            }
-
-            if (elapsed_ms >= timeout_ms)
-            {
-                return AppError_Timeout;
-            }
+            elapsed_ms = INT64_MAX;
+        }
+        else
+        {
+            elapsed_ms += current_sleep_ms;
         }
 
         it++;
@@ -321,7 +343,7 @@ IC_HEADER_FUNC AppError pw_task_completion_wait(const PwTaskCompletion* const co
         }
     }
 
-    return AppError_NoError;
+    return PRIVATE_pw_task_completion_result(state);
 }
 
 // ==============================================================================
@@ -399,7 +421,7 @@ IC_HEADER_FUNC AppError pw_task_pool_init(PwTaskPool* const out_pool, uint32_t w
 
 #define PW_TASK_POOL_CLOSE_LIST(X, Type) \
     X(Type, Drain, 0, "Finish queued and active tasks") \
-    X(Type, Abort, 1, "Finish only active tasks")
+    X(Type, Abort, 1, "Finish only active tasks, drop queued ones")
 
 IC_TYPENUM_FULL(PwTaskPoolClose, uint8_t, PW_TASK_POOL_CLOSE_LIST)
 
@@ -447,6 +469,22 @@ IC_HEADER_FUNC AppError pw_task_pool_close(PwTaskPool* const pool, const PwTaskP
 
     pw_atomic_store(&pool->PRIVATE_state, set_state);
 
+    if (set_state == PW_TASKPOOL_CLOSING_ABORT)
+    {
+        // Drop every queued job now, and tell anyone waiting on one that it will never run
+        while (pool->PRIVATE_count > 0)
+        {
+            const PwTaskPoolJob* const dropped = &pool->PRIVATE_jobs[pool->PRIVATE_head];
+            if (dropped->PRIVATE_completion)
+            {
+                pw_atomic_store(&dropped->PRIVATE_completion->PRIVATE_completed, PW_TASK_COMPLETION_CANCELLED);
+            }
+
+            pool->PRIVATE_head = (pool->PRIVATE_head + 1) % PW_TASKPOOL_MAX_PENDING_TASKS;
+            pool->PRIVATE_count--;
+        }
+    }
+
     pw_mutex_unlock(&pool->PRIVATE_mutex);
 
     for (uint32_t i = 0; i < pool->PRIVATE_worker_count; i++)
@@ -482,23 +520,21 @@ IC_HEADER_FUNC AppError pw_task_pool_close(PwTaskPool* const pool, const PwTaskP
                 break;
             }
 
+            // Checked before sleeping, so a timeout of 0 only checks once
+            if (timeout_ms != PW_TASK_COMPLETION_WAIT_FOREVER && elapsed_ms >= timeout_ms)
+            {
+                return AppError_Timeout;
+            }
+
             pw_thread_sleep_milliseconds(sleep_ms);
 
-            if (timeout_ms != PW_TASK_COMPLETION_WAIT_FOREVER)
+            if (elapsed_ms > INT64_MAX - sleep_ms)
             {
-                if (elapsed_ms > INT64_MAX - sleep_ms)
-                {
-                    elapsed_ms = INT64_MAX;
-                }
-                else
-                {
-                    elapsed_ms += sleep_ms;
-                }
-
-                if (elapsed_ms >= timeout_ms)
-                {
-                    return AppError_Timeout;
-                }
+                elapsed_ms = INT64_MAX;
+            }
+            else
+            {
+                elapsed_ms += sleep_ms;
             }
 
             if (sleep_ms < 16)
@@ -511,23 +547,21 @@ IC_HEADER_FUNC AppError pw_task_pool_close(PwTaskPool* const pool, const PwTaskP
     {
         while (pw_atomic_load(&pool->PRIVATE_active_jobs) != 0)
         {
+            // Checked before sleeping, so a timeout of 0 only checks once
+            if (timeout_ms != PW_TASK_COMPLETION_WAIT_FOREVER && elapsed_ms >= timeout_ms)
+            {
+                return AppError_Timeout;
+            }
+
             pw_thread_sleep_milliseconds(sleep_ms);
 
-            if (timeout_ms != PW_TASK_COMPLETION_WAIT_FOREVER)
+            if (elapsed_ms > INT64_MAX - sleep_ms)
             {
-                if (elapsed_ms > INT64_MAX - sleep_ms)
-                {
-                    elapsed_ms = INT64_MAX;
-                }
-                else
-                {
-                    elapsed_ms += sleep_ms;
-                }
-
-                if (elapsed_ms >= timeout_ms)
-                {
-                    return AppError_Timeout;
-                }
+                elapsed_ms = INT64_MAX;
+            }
+            else
+            {
+                elapsed_ms += sleep_ms;
             }
 
             if (sleep_ms < 16)
@@ -576,7 +610,7 @@ IC_HEADER_FUNC AppError pw_task_pool_submit(PwTaskPool* const pool, const PwTask
 
     if (out_completion)
     {
-        pw_atomic_store(&out_completion->PRIVATE_completed, 0);
+        pw_atomic_store(&out_completion->PRIVATE_completed, PW_TASK_COMPLETION_PENDING);
     }
 
     if (pool->PRIVATE_count >= PW_TASKPOOL_MAX_PENDING_TASKS)

@@ -1,6 +1,6 @@
 [Part of The Crucible C Project.](https://github.com/CrucibleC/CrucibleC)
 
-# IronCLib V1.0.0
+# IronCLib V1.0.2
 [![Tests](https://github.com/CrucibleC/IronCLib/actions/workflows/tests.yml/badge.svg)](https://github.com/CrucibleC/IronCLib/actions/workflows/tests.yml)
 
 IronCLib is a small, header-only C library for writing safer, more consistent C code.
@@ -264,7 +264,9 @@ When using `ic_num_cast.h`, some compilers (especially non-GCC, non-Clang, or no
 
 `ic_static_assert.h` uses native static assert when available, otherwise a fallback based on an `extern` array declaration is used (no extra warning suppression needed on GCC/Clang).
 
-`ic_concurrency.h` requires `threads.h`/`stdatomic.h`, `pthread.h`, or `Windows.h` depending on platform. On Linux/POSIX in strict ISO mode (`-std=c99`/`-std=c11` rather than `gnu99`/`gnu11`), define `_POSIX_C_SOURCE=200809L` for the whole build, otherwise POSIX functions such as `nanosleep` are not declared. See [ic_concurrency.h](docs/header_library.md#ic_concurrencyh) for details.
+`ic_concurrency.h` requires `threads.h`/`stdatomic.h`, `pthread.h`, or `windows.h` depending on platform. On Linux/POSIX in strict ISO mode (`-std=c99`/`-std=c11` rather than `gnu99`/`gnu11`), define `_POSIX_C_SOURCE=200809L` for the whole build, otherwise POSIX functions such as `nanosleep` are not declared. See [ic_concurrency.h](docs/header_library.md#ic_concurrencyh) for details.
+
+On Windows, `windows.h` is included with `WIN32_LEAN_AND_MEAN` and `NOMINMAX`, so the `min`/`max` macros do not leak into your code. If you need the full `windows.h`, include it before any IronCLib header or define `IC_INCLUDE_FULL_WINDOWS_H`.
 
 ## Build and Test Guarantees
 IronCLib is continuously tested on a build matrix covering multiple compilers, C standards, and optimization levels.
@@ -295,6 +297,7 @@ All platforms are tested automatically with [GitHub Actions](.github/workflows/t
 - **Linux** uses the runners' Ubuntu 24.04 gcc and clang.
 - **macOS** uses Apple clang and Homebrew gcc.
 - **Windows** uses gcc and clang from MinGW (MSYS2 UCRT64) and MSVC from the runner's Visual Studio.
+- **Sanitizers**: the full gcc and clang matrix also runs on Linux x86_64 under AddressSanitizer + UndefinedBehaviorSanitizer, and separately under ThreadSanitizer.
 
 # TODO
 - Add AUTHORS file
