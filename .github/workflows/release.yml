@@ -1,0 +1,65 @@
+name: Release
+
+# Publishes a GitHub release when a version tag is pushed:
+#     git tag v1.0.3
+#     git push origin v1.0.3
+# The tag must match ironclib/ic_version.h and the README title, and the full test matrix
+# must pass, otherwise nothing is published.
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: read
+
+jobs:
+  # Fast check first, so a mistyped tag fails in seconds instead of after the whole matrix
+  check-version:
+    name: Check version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Check tag matches ic_version.h and README
+        run: python .github/scripts/package_release.py "${GITHUB_REF_NAME}" --check-only
+
+  test:
+    name: Tests
+    needs: check-version
+    uses: ./.github/workflows/tests.yml
+
+  release:
+    name: Publish release
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # needed to create the release and upload its files
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Build release archives
+        run: python .github/scripts/package_release.py "${GITHUB_REF_NAME}" dist
+
+      # Release notes are generated from the pull requests merged since the previous tag,
+      # and can be edited on GitHub afterwards
+      - name: Create GitHub release
+        run: |
+          gh release create "${GITHUB_REF_NAME}" dist/*.zip dist/*.tar.gz \
+            --title "IronCLib ${GITHUB_REF_NAME}" \
+            --generate-notes \
+            --verify-tag
+        env:
+          GH_TOKEN: ${{ github.token }}
