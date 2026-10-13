@@ -1,2 +1,4 @@
-personal_notes.txt
 .vscode/
+
+# Output of .github/scripts/package_release.py when run locally
+dist/

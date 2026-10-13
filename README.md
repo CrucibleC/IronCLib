@@ -1,6 +1,6 @@
 [Part of The Crucible C Project.](https://github.com/CrucibleC/CrucibleC)
 
-# IronCLib V1.0.2
+# IronCLib v1.0.3
 [![Tests](https://github.com/CrucibleC/IronCLib/actions/workflows/tests.yml/badge.svg)](https://github.com/CrucibleC/IronCLib/actions/workflows/tests.yml)
 
 IronCLib is a small, header-only C library for writing safer, more consistent C code.
@@ -16,6 +16,7 @@ C99 compatibility. The headers can also be included from C++11 code.
 * [Quick Intro](#quick-intro)
 * [Library Overview](#library-overview)
 * [Read more?](#read-more)
+* [Releases](#releases)
 * [License](#license)
 * [Build Requirements](#build-requirements)
 * [Build and Test Guarantees](#build-and-test-guarantees)
@@ -250,6 +251,31 @@ This document is only a quick intro.
 - For ideas on how to use the library in your project, [go here](docs/using_in_your_system.md).
 - For premade monolithic files, [go here](docs/premade). These are referenced in documentation.
 - For a minimal, header-based test-framework or information on how IronCLib is tested, [go here](ironhammerc).
+
+## Releases
+Each [GitHub release](https://github.com/CrucibleC/IronCLib/releases) provides `ironclib-X.Y.Z.zip` and `ironclib-X.Y.Z.tar.gz`, containing:
+
+```
+ironclib-X.Y.Z/
+├── include/ironclib/   all library headers
+├── LICENSE
+├── NOTICE
+├── AUTHORS
+└── README.md
+```
+
+Add `include/` to your include path and use the headers as shown in this README, e.g. `#include "ironclib/ic.h"`. The premade headers are not part of the release; copy them from [docs/premade](docs/premade) if you want them. When redistributing IronCLib, keep `LICENSE` and `NOTICE` with it, as the Apache License requires.
+
+The version follows [semantic versioning](https://semver.org) and is available in code through `ic_version.h` (`IC_VERSION_STRING`, `IC_VERSION_NUMBER`, ...).
+
+To publish a release (maintainers): update the version in `ironclib/ic_version.h` and in the title of this README, merge that, then push a matching tag:
+
+```bash
+git tag v1.0.3
+git push origin v1.0.3
+```
+
+The [release workflow](.github/workflows/release.yml) checks that the tag matches both versions, runs the full test matrix, and only then publishes the release with notes generated from the merged pull requests.
 
 ## License
 IronCLib is licensed under the Apache License, Version 2.0. See the [LICENSE](LICENSE) file for details.

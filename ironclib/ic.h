@@ -18,6 +18,7 @@
 #define IRON_C_FULL_H
 
 // No internal ic dependencies
+#include "ic_version.h"
 #include "ic_inline.h"
 #include "ic_static_assert.h"
 #include "ic_bounded_loop.h"
