@@ -53,13 +53,22 @@ jobs:
       - name: Build release archives
         run: python .github/scripts/package_release.py "${GITHUB_REF_NAME}" dist
 
-      # Release notes are generated from the pull requests merged since the previous tag,
-      # and can be edited on GitHub afterwards
-      - name: Create GitHub release
+      # Two ways to release, both supported:
+      # - push only the tag: the release is created here, with notes generated from the pull
+      #   requests merged since the previous tag (editable on GitHub afterwards)
+      # - create the release on GitHub ("Draft a new release", which also creates the tag): it is
+      #   published at once with only GitHub's automatic "Source code" archives, and the archives
+      #   built here are attached to it once the tests have passed
+      - name: Create or update GitHub release
         run: |
-          gh release create "${GITHUB_REF_NAME}" dist/*.zip dist/*.tar.gz \
-            --title "IronCLib ${GITHUB_REF_NAME}" \
-            --generate-notes \
-            --verify-tag
+          if gh release view "${GITHUB_REF_NAME}" > /dev/null 2>&1; then
+            echo "Release ${GITHUB_REF_NAME} already exists, attaching the archives to it"
+            gh release upload "${GITHUB_REF_NAME}" dist/*.zip dist/*.tar.gz --clobber
+          else
+            gh release create "${GITHUB_REF_NAME}" dist/*.zip dist/*.tar.gz \
+              --title "IronCLib ${GITHUB_REF_NAME}" \
+              --generate-notes \
+              --verify-tag
+          fi
         env:
           GH_TOKEN: ${{ github.token }}

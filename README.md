@@ -275,7 +275,9 @@ git tag v1.0.3
 git push origin v1.0.3
 ```
 
-The [release workflow](.github/workflows/release.yml) checks that the tag matches both versions, runs the full test matrix, and only then publishes the release with notes generated from the merged pull requests.
+The [release workflow](.github/workflows/release.yml) checks that the tag matches both versions, runs the full test matrix (about 15–20 minutes), and only then publishes the release with notes generated from the merged pull requests.
+
+Alternatively, create the release on GitHub with *Draft a new release* and a new tag. GitHub publishes it immediately with only its automatic *Source code* archives (the whole repository); the workflow attaches `ironclib-X.Y.Z.zip` and `.tar.gz` to it once the tests have passed. Either way, the release is complete when those two files appear.
 
 ## License
 IronCLib is licensed under the Apache License, Version 2.0. See the [LICENSE](LICENSE) file for details.
