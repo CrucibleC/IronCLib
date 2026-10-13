@@ -38,16 +38,21 @@ def get_generator(preferred):
 
 
 def find_visual_studio_generator():
+    # Returns (generator, error):
+    #   (name, None)  - Visual Studio found and CMake has a generator for it
+    #   (None, None)  - no Visual Studio with C++ tools installed (msvc is skipped)
+    #   (None, error) - Visual Studio installed but unusable (msvc counts as a failure, so CI
+    #                   cannot silently stop testing msvc)
     # Ask vswhere (ships with every VS install) for the newest VS with C++ tools
     if not IS_WINDOWS:
-        return None
+        return None, None
 
     program_files = os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")
     vswhere = os.path.join(
         program_files, "Microsoft Visual Studio", "Installer", "vswhere.exe"
     )
     if not os.path.exists(vswhere):
-        return None
+        return None, None
 
     try:
         output = subprocess.check_output(
@@ -62,16 +67,32 @@ def find_visual_studio_generator():
         )
         installs = json.loads(output)
     except (subprocess.CalledProcessError, ValueError):
-        return None
+        return None, None
 
     if not installs:
-        return None
+        return None, None
 
-    # e.g. installationVersion "17.14.x" + productLineVersion "2022"
-    install = installs[0]
-    major = install["installationVersion"].split(".")[0]
-    year = install["catalog"]["productLineVersion"]
-    return f"Visual Studio {major} {year}"
+    # The generator name is "Visual Studio <major> <year>", e.g. "Visual Studio 17 2022" or
+    # "Visual Studio 18 2026". vswhere's productLineVersion cannot be used for the year: it is
+    # "2022" for VS 2022 but "18" for VS 2026. So ask CMake which generator matches the major version.
+    major = installs[0]["installationVersion"].split(".")[0]
+    # Exactly "Visual Studio <major> <year>": CMake also lists legacy names with an architecture
+    # suffix (e.g. "Visual Studio 15 2017 Win64"), which must not be picked
+    name_pattern = re.compile(rf"^Visual Studio {re.escape(major)} \d{{4}}$")
+
+    try:
+        capabilities = json.loads(
+            subprocess.check_output(["cmake", "-E", "capabilities"], text=True)
+        )
+        for generator in capabilities.get("generators", []):
+            name = generator.get("name", "")
+            if name_pattern.match(name):
+                return name, None
+    except (subprocess.CalledProcessError, OSError, ValueError) as e:
+        return None, f"could not query CMake generators ({e})"
+
+    # This CMake does not know this Visual Studio version yet
+    return None, f"no CMake generator for Visual Studio {major} (a newer CMake is needed)"
 
 
 def find_compiler(name):
@@ -106,8 +127,10 @@ configs = [
 ]
 
 # MSVC is only available on Windows
+MSVC_GENERATOR_ERROR = None
 if IS_WINDOWS:
-    configs.append(("msvc", None, find_visual_studio_generator()))
+    MSVC_GENERATOR, MSVC_GENERATOR_ERROR = find_visual_studio_generator()
+    configs.append(("msvc", None, MSVC_GENERATOR))
 
 
 # -----------------------------
@@ -167,7 +190,12 @@ for compiler_name, compiler, preferred_gen in configs:
 
     if compiler_name == "msvc":
         if not preferred_gen:
-            print("msvc skipped (Visual Studio not available)")
+            if MSVC_GENERATOR_ERROR:
+                # Visual Studio is installed, so skipping would hide that msvc is not tested
+                failures.append(("msvc", MSVC_GENERATOR_ERROR))
+                print(f"FAIL: msvc ({MSVC_GENERATOR_ERROR})")
+            else:
+                print("msvc skipped (Visual Studio not available)")
             continue
         print(f"Using msvc: {preferred_gen}")
         generator = preferred_gen

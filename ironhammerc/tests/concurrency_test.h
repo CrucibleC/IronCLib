@@ -272,10 +272,9 @@ static int visibility_test_reader_func(void* arg)
 
     while (ic_atomic_load(&t->flag) == 0) {}
 
-    // If memory ordering is broken, this *might* see stale data
-    IHC_CHECK(t->data == 123);
-
-    return 0;
+    // If memory ordering is broken, this *might* see stale data.
+    // Reported through the task result, as IHC_CHECK must not be called from worker threads.
+    return (t->data == 123) ? 1 : 0;
 }
 
 IHC_TEST(verify_memory_visibility_with_atomics)
@@ -286,11 +285,15 @@ IHC_TEST(verify_memory_visibility_with_atomics)
 
     ic_task writer, reader;
 
-    ic_task_init(&reader, visibility_test_reader_func, &vis_obj);
-    ic_task_init(&writer, visibility_test_writer_func, &vis_obj);
+    IHC_ASSERT(ic_task_init(&reader, visibility_test_reader_func, &vis_obj) == IC_CONCURRENCY_OK);
+    IHC_ASSERT(ic_task_init(&writer, visibility_test_writer_func, &vis_obj) == IC_CONCURRENCY_OK);
 
-    ic_task_join(&writer);
-    ic_task_join(&reader);
+    IHC_CHECK(ic_task_join(&writer) == IC_CONCURRENCY_OK);
+    IHC_CHECK(ic_task_join(&reader) == IC_CONCURRENCY_OK);
+
+    int reader_saw_data = 0;
+    IHC_CHECK(ic_task_get_result(&reader, &reader_saw_data) == IC_CONCURRENCY_OK);
+    IHC_CHECK(reader_saw_data == 1);
 }
 
 static int mutex_holder_thread(void* arg)
