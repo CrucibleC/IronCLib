@@ -37,4 +37,53 @@ IHC_TEST(verify_memory_allocates_valid_array)
     free(valid_array);
 }
 
+IHC_TEST(verify_memory_handles_every_integer_size_type)
+{
+    // Negative values of every signed type are rejected, whatever their width
+    const signed char negative_schar = -1;
+    const long long negative_llong = -1000000000000LL;
+    IHC_CHECK(IC_MALLOC_ARRAY(int, negative_schar) == NULL);
+    IHC_CHECK(IC_MALLOC_ARRAY(int, negative_llong) == NULL);
+
+    // Types smaller than int (plain char, unsigned char, short) are promoted to int before
+    // dispatch, which sidesteps compilers disagreeing about plain char in _Generic (see ic_memory.h)
+    const char char_size = 4;
+    const unsigned char uchar_size = 4;
+    const short negative_short = -3;
+    int* const from_char = IC_MALLOC_ARRAY(int, char_size);
+    int* const from_uchar = IC_MALLOC_ARRAY(int, uchar_size);
+    IHC_CHECK(from_char != NULL);
+    IHC_CHECK(from_uchar != NULL);
+    IHC_CHECK(IC_MALLOC_ARRAY(int, negative_short) == NULL);
+    free(from_char);
+    free(from_uchar);
+
+    // Qualified (const) and unsigned sizes allocate normally
+    const unsigned short ushort_size = 4;
+    const unsigned long long ullong_size = 4;
+    const size_t size_t_size = 4;
+    int* const from_ushort = IC_MALLOC_ARRAY(int, ushort_size);
+    int* const from_ullong = IC_MALLOC_ARRAY(int, ullong_size);
+    int* const from_size_t = IC_MALLOC_ARRAY(int, size_t_size);
+    IHC_CHECK(from_ushort != NULL);
+    IHC_CHECK(from_ullong != NULL);
+    IHC_CHECK(from_size_t != NULL);
+    free(from_ushort);
+    free(from_ullong);
+    free(from_size_t);
+}
+
+IHC_TEST(verify_memory_evaluates_size_once_when_supported)
+{
+#if IC_MALLOC_ARRAY_SINGLE_EVALUATION
+    int count = 3;
+    int* const array = IC_MALLOC_ARRAY(int, count++);
+    IHC_CHECK(array != NULL);
+    IHC_CHECK(count == 4); // the fallback would increment twice
+    free(array);
+#else
+    IHC_CHECK(1); // fallback build: size is documented to be evaluated more than once
+#endif
+}
+
 #endif // IRON_HAMMER_C_TESTS_MEMORY_TEST_H

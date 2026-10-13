@@ -93,6 +93,7 @@ NOTES
 #include "ic_static_assert.h"
 #include "ic_inline.h"
 #include "ic_disable_warnings.h"
+#include <limits.h> // CHAR_BIT, so the bits-per-byte check below always runs
 
 /*
 ===============================================================================
@@ -124,11 +125,15 @@ CONVERSION SAFETY CHECKS
 ===============================================================================
 */
 
-// ---------------------- SIGNED INT -> SIGNED INT ---------------------- 
+// Every check and clamp honours both bounds (lo, hi), so custom ranges narrower than the type
+// (e.g. an unsigned target limited to [10, 100]) clamp correctly at both ends.
+// Each clamp branch is cast to to_t on its own so no bound is converted through a mixed common type.
+
+// ---------------------- SIGNED INT -> SIGNED INT ----------------------
 
 // Clamp at compile-time condition
 #define IC_COMP_CLAMPABLE_SIGNED_INT_TO_SIGNED_INT(from_min, from_max, to_min, to_max) \
-    ((to_min <= from_min) && (to_max >= from_max))
+    (((to_min) <= (from_min)) && ((to_max) >= (from_max)))
 
 // Assert at runtime condition
 #define IC_INNER_SAFE_SIGNED_INT_TO_SIGNED_INT(to_t, v, lo, hi) \
@@ -136,27 +141,28 @@ CONVERSION SAFETY CHECKS
 
 // Clamp at runtime (no UB)
 #define IC_INNER_CLAMP_SIGNED_INT_TO_SIGNED_INT(to_t, v, lo, hi) \
-    ((to_t)((v) < (lo) ? (lo) : ((v) > (hi) ? (hi) : (v))))
+    ((to_t)((v) < (lo) ? (to_t)(lo) : ((v) > (hi) ? (to_t)(hi) : (to_t)(v))))
 
-// ---------------------- SIGNED INT -> UNSIGNED INT ---------------------- 
+// ---------------------- SIGNED INT -> UNSIGNED INT ----------------------
 
 // Clamp at compile-time condition
 #define IC_COMP_CLAMPABLE_SIGNED_INT_TO_UNSIGNED_INT(from_min, from_max, to_min, to_max) (0)
 
 // Assert at runtime condition
 #define IC_INNER_SAFE_SIGNED_INT_TO_UNSIGNED_INT(to_t, v, lo, hi) \
-    ((v) >= 0 && (unsigned long long)(v) <= (unsigned long long)(hi))
+    ((v) >= 0 && \
+     (unsigned long long)(v) >= (unsigned long long)(lo) && \
+     (unsigned long long)(v) <= (unsigned long long)(hi))
 
 // Clamp at runtime (no UB)
 #define IC_INNER_CLAMP_SIGNED_INT_TO_UNSIGNED_INT(to_t, v, lo, hi) \
     ((to_t)( \
-        ((v) < 0) ? 0ULL : \
-        ((unsigned long long)(v) > (unsigned long long)(hi)) ? \
-            (unsigned long long)(hi) : \
-            (unsigned long long)(v) \
+        ((v) < 0 || (unsigned long long)(v) < (unsigned long long)(lo)) ? (to_t)(lo) : \
+        ((unsigned long long)(v) > (unsigned long long)(hi)) ? (to_t)(hi) : \
+        (to_t)(v) \
     ))
 
-// ---------------------- SIGNED INT -> FLOAT ---------------------- 
+// ---------------------- SIGNED INT -> FLOAT ----------------------
 
 // Clamp at compile-time condition
 #define IC_COMP_CLAMPABLE_SIGNED_INT_TO_FLOAT(from_min, from_max, to_min, to_max) \
@@ -168,50 +174,63 @@ CONVERSION SAFETY CHECKS
 
 // Clamp at runtime (no UB)
 #define IC_INNER_CLAMP_SIGNED_INT_TO_FLOAT(to_t, v, lo, hi) \
-    ((to_t)(((double)(v) < (double)(lo)) ? (lo) : \
-    ((double)(v) > (double)(hi) ? (hi) : (v))))
+    ((to_t)(((double)(v) < (double)(lo)) ? (to_t)(lo) : \
+    ((double)(v) > (double)(hi) ? (to_t)(hi) : (to_t)(v))))
 
-// ---------------------- UNSIGNED INT -> SIGNED INT ---------------------- 
+// ---------------------- UNSIGNED INT -> SIGNED INT ----------------------
+//
+// lo and hi are signed and may be negative, so they are only converted to unsigned long long
+// after their sign has been checked.
 
 // Clamp at compile-time condition
 #define IC_COMP_CLAMPABLE_UNSIGNED_INT_TO_SIGNED_INT(from_min, from_max, to_min, to_max) \
-    ((from_min >= 0) && (from_max <= (unsigned long long)to_max))
+    (((to_min) <= 0 || (unsigned long long)(to_min) <= (unsigned long long)(from_min)) && \
+     ((to_max) >= 0 && (unsigned long long)(from_max) <= (unsigned long long)(to_max)))
 
 // Assert at runtime condition
 #define IC_INNER_SAFE_UNSIGNED_INT_TO_SIGNED_INT(to_t, v, lo, hi) \
-    ((unsigned long long)(v) <= (unsigned long long)(hi))
+    (((lo) <= 0 || (unsigned long long)(v) >= (unsigned long long)(lo)) && \
+     ((hi) >= 0 && (unsigned long long)(v) <= (unsigned long long)(hi)))
 
 // Clamp at runtime (no UB)
 #define IC_INNER_CLAMP_UNSIGNED_INT_TO_SIGNED_INT(to_t, v, lo, hi) \
-    ((to_t)((unsigned long long)(v) > (unsigned long long)(hi) ? (hi) : (v)))
+    ((to_t)( \
+        ((lo) > 0 && (unsigned long long)(v) < (unsigned long long)(lo)) ? (to_t)(lo) : \
+        ((hi) < 0 || (unsigned long long)(v) > (unsigned long long)(hi)) ? (to_t)(hi) : \
+        (to_t)(v) \
+    ))
 
-// ---------------------- UNSIGNED INT -> UNSIGNED INT ---------------------- 
+// ---------------------- UNSIGNED INT -> UNSIGNED INT ----------------------
 
 // Clamp at compile-time condition
 #define IC_COMP_CLAMPABLE_UNSIGNED_INT_TO_UNSIGNED_INT(from_min, from_max, to_min, to_max) \
-    ((to_max >= from_max))
+    (((to_min) <= (from_min)) && ((to_max) >= (from_max)))
 
 // Assert at runtime condition
 #define IC_INNER_SAFE_UNSIGNED_INT_TO_UNSIGNED_INT(to_t, v, lo, hi) \
-    ((v) <= (hi))
+    ((v) >= (lo) && (v) <= (hi))
 
 // Clamp at runtime (no UB)
 #define IC_INNER_CLAMP_UNSIGNED_INT_TO_UNSIGNED_INT(to_t, v, lo, hi) \
-    ((to_t)((v) > (hi) ? (hi) : (v)))
+    ((to_t)((v) < (lo) ? (to_t)(lo) : ((v) > (hi) ? (to_t)(hi) : (to_t)(v))))
 
-// ---------------------- UNSIGNED INT -> FLOAT ---------------------- 
+// ---------------------- UNSIGNED INT -> FLOAT ----------------------
+//
+// Compared in double so a floating-point bound is never converted to an integer type
+// (e.g. (unsigned long long)FLT_MAX would be UB).
 
 // Clamp at compile-time condition
 #define IC_COMP_CLAMPABLE_UNSIGNED_INT_TO_FLOAT(from_min, from_max, to_min, to_max) \
-    ((from_max) <= (to_max))
+    ((from_min) >= (to_min) && (from_max) <= (to_max))
 
 // Assert at runtime condition
 #define IC_INNER_SAFE_UNSIGNED_INT_TO_FLOAT(to_t, v, lo, hi) \
-    ((double)(v) <= (double)(hi))
+    ((double)(v) >= (double)(lo) && (double)(v) <= (double)(hi))
 
 // Clamp at runtime (no UB)
 #define IC_INNER_CLAMP_UNSIGNED_INT_TO_FLOAT(to_t, v, lo, hi) \
-    ((to_t)((v) > (unsigned long long)(hi) ? (hi) : (v)))
+    ((to_t)(((double)(v) < (double)(lo)) ? (to_t)(lo) : \
+    ((double)(v) > (double)(hi) ? (to_t)(hi) : (to_t)(v))))
 
 // ---------------------- FLOAT -> INT HELPERS ----------------------
 //
@@ -230,7 +249,11 @@ CONVERSION SAFETY CHECKS
 //      sub-integer resolution at |v| >= |t|. The source type is at most 64 bits, so it fits in double.
 //
 // Clamping never converts lo/hi to floating-point (every branch yields to_t), as that can also round
-// the bound outside the range of to_t.
+// the bound outside the range of to_t. An unsafe value picks its side as follows:
+//   - NaN                        -> lo
+//   - outside the type window    -> by sign (the window contains [lo, hi])
+//   - inside the type window     -> t <= lo means v is below lo, otherwise v is above hi
+//                                   (lo < t < hi would mean lo < v < hi, which is safe)
 
 // Exact 2^n as double, for 1 <= n <= 64
 #define IC_INNER_POW2(n) \
@@ -239,10 +262,24 @@ CONVERSION SAFETY CHECKS
 #define IC_INNER_BITS(t) \
     (sizeof(t) * IC_NUM_BITS_PER_BYTE)
 
+// Type windows in which (to_t)(v) is well defined (false for NaN)
+#define IC_INNER_FLOAT_IN_SIGNED_WINDOW(to_t, v) \
+    ((double)(v) >= -IC_INNER_POW2(IC_INNER_BITS(to_t) - 1) && \
+     (double)(v) <   IC_INNER_POW2(IC_INNER_BITS(to_t) - 1))
+
+#define IC_INNER_FLOAT_IN_UNSIGNED_WINDOW(to_t, v) \
+    ((double)(v) >= 0.0 && \
+     (double)(v) <  IC_INNER_POW2(IC_INNER_BITS(to_t)))
+
 // Exact real-number check lo <= v <= hi, only valid when (to_t)(v) is known to be well defined
 #define IC_INNER_FLOAT_IN_INT_RANGE(to_t, v, lo, hi) \
     (((to_t)(v) > (lo) || ((to_t)(v) == (lo) && (double)(v) >= (double)(to_t)(v))) && \
      ((to_t)(v) < (hi) || ((to_t)(v) == (hi) && (double)(v) <= (double)(to_t)(v))))
+
+// Bound for an unsafe, non-NaN value, given whether it is inside the type window
+#define IC_INNER_FLOAT_OUT_OF_RANGE_BOUND(to_t, v, lo, hi, in_window) \
+    ((in_window) ? (((to_t)(v) <= (lo)) ? (to_t)(lo) : (to_t)(hi)) : \
+                   (((v) > 0) ? (to_t)(hi) : (to_t)(lo)))
 
 // ---------------------- FLOAT -> SIGNED INT ----------------------
 
@@ -251,15 +288,14 @@ CONVERSION SAFETY CHECKS
 
 // Assert at runtime condition
 #define IC_INNER_SAFE_FLOAT_TO_SIGNED_INT(to_t, v, lo, hi) \
-    ((v) == (v) && \
-    (double)(v) >= -IC_INNER_POW2(IC_INNER_BITS(to_t) - 1) && \
-    (double)(v) <   IC_INNER_POW2(IC_INNER_BITS(to_t) - 1) && \
+    (IC_INNER_FLOAT_IN_SIGNED_WINDOW(to_t, v) && \
     IC_INNER_FLOAT_IN_INT_RANGE(to_t, v, lo, hi))
 
 // Clamp at runtime (no UB)
 #define IC_INNER_CLAMP_FLOAT_TO_SIGNED_INT(to_t, v, lo, hi) \
     ((to_t)(IC_INNER_SAFE_FLOAT_TO_SIGNED_INT(to_t, v, lo, hi) ? (to_t)(v) : \
-    ((v) > 0 ? (to_t)(hi) : (to_t)(lo))))
+    ((v) != (v)) ? (to_t)(lo) : \
+    IC_INNER_FLOAT_OUT_OF_RANGE_BOUND(to_t, v, lo, hi, IC_INNER_FLOAT_IN_SIGNED_WINDOW(to_t, v))))
 
 
 // ---------------------- FLOAT -> UNSIGNED INT ----------------------
@@ -269,15 +305,14 @@ CONVERSION SAFETY CHECKS
 
 // Assert at runtime condition
 #define IC_INNER_SAFE_FLOAT_TO_UNSIGNED_INT(to_t, v, lo, hi) \
-    ((v) == (v) && \
-    (double)(v) >= 0.0 && \
-    (double)(v) <  IC_INNER_POW2(IC_INNER_BITS(to_t)) && \
+    (IC_INNER_FLOAT_IN_UNSIGNED_WINDOW(to_t, v) && \
     IC_INNER_FLOAT_IN_INT_RANGE(to_t, v, lo, hi))
 
 // Clamp at runtime (no UB)
 #define IC_INNER_CLAMP_FLOAT_TO_UNSIGNED_INT(to_t, v, lo, hi) \
     ((to_t)(IC_INNER_SAFE_FLOAT_TO_UNSIGNED_INT(to_t, v, lo, hi) ? (to_t)(v) : \
-    ((v) > 0 ? (to_t)(hi) : (to_t)(lo))))
+    ((v) != (v)) ? (to_t)(lo) : \
+    IC_INNER_FLOAT_OUT_OF_RANGE_BOUND(to_t, v, lo, hi, IC_INNER_FLOAT_IN_UNSIGNED_WINDOW(to_t, v))))
 
 
 // ---------------------- FLOAT -> FLOAT ---------------------- 
@@ -342,7 +377,7 @@ IC_INNER_CAST_NAME(from_t, to_t)(const from_t v) \
     return IC_INNER_CLAMP_DISPATCH(from_mold, to_mold)(to_t, v, to_min, to_max); \
 }
 
-#elif defined(IC_CAST_ASSERT_FUNC) // If assertion function is defined, generate assert-based casts instead of clamping
+#else // If assertion function is defined, generate assert-based casts instead of clamping
 
 #define IC_INNER_GEN_CAST(from_t, from_mold, from_min, from_max, \
                           to_t, to_mold, to_min, to_max) \

@@ -19,14 +19,21 @@
 
 #include <stddef.h>
 #include "ic_inline.h"
+#include "ic_glue_macro.h" // IC_EXPAND
+
+// C++ compatibility: C linkage for everything declared below. Placed after the #includes,
+// since system and other library headers must not be wrapped in an extern "C" block.
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /*
 Compatibility:
     - C99+ supported
-    - IC_MAKE_CO_JOB(...) relies on variadic macro argument expansion and supports 
-      up to IC_CO_MAX_STEPS entries (default 10). While this works on modern C99 
-      compilers including GCC, Clang, and MSVC, some older or non-conforming 
-      preprocessors may handle variadic macro expansion differently. 
+    - IC_MAKE_CO_JOB(...) relies on variadic macro argument expansion and supports
+      1 to 10 entries. It works on GCC, Clang, and MSVC with either preprocessor
+      (the traditional one, default in MSVC C++, is handled with IC_EXPAND), but other
+      old or non-conforming preprocessors may handle variadic macro expansion differently.
     - For maximum portability, jobs can always be constructed manually with 
       ic_make_co_job and ic_co_job_add_step instead of using the macro shortcut.
 */
@@ -58,6 +65,18 @@ Compatibility:
 // int ic_co_scheduler_is_done(const ic_co_scheduler* s)            [ returns 1 (true) if all jobs are finished, otherwise 0 (false)  ]
 // int ic_co_scheduler_job_count(const ic_co_scheduler* s)          [ total number of jobs in this scheduler ]
 // int ic_co_scheduler_credits(const ic_co_scheduler* s)            [ total number of credits (steps) ramaining for this cycle ]
+//
+// ========== RULES ==========
+//
+// - The scheduler stores a POINTER to each added job, not a copy. The job (and its data) must outlive
+//   the scheduler's use of it, e.g. a static job or one in the same scope as the scheduler. Never pass
+//   the address of a temporary such as &(ic_co_job)IC_MAKE_CO_JOB(...) declared in a narrower scope.
+// - Do not add steps to a job (ic_co_job_add_step) while it is scheduled.
+// - IC_MAKE_CO_JOB supports 1 to 10 steps regardless of IC_CO_MAX_STEPS. For more steps, raise
+//   IC_CO_MAX_STEPS and build the job with ic_make_co_job + ic_co_job_add_step.
+// - add_job requires priority >= 0 and 1 <= weight <= IC_CO_MAX_STEPS (a job can never use more
+//   credits per cycle than it can have steps), and rejects empty jobs or jobs with NULL steps.
+//   Rejected calls are reported through IC_CO_BAD_CALL_CAPTURE and the job is not added.
 
 // ========== CONFIG ==========
 
@@ -76,9 +95,11 @@ Compatibility:
 // Priority:    Importance to go first
 // Credits:     Remaining steps to take in current cycle (equals weight at cycle start)
 // State:       The step the job is on, i.e. total steps taken for job
+// The score is compared as long long. The default computes in long long so that
+// priority * credits cannot overflow int for large priorities (credits <= IC_CO_MAX_STEPS).
 #ifndef IC_CO_SCORE
 #define IC_CO_SCORE(priority, credits, state) \
-    ((priority) * (credits) - (state))
+    ((long long)(priority) * (long long)(credits) - (long long)(state))
 #endif
 
 
@@ -159,8 +180,11 @@ typedef struct ic_co_scheduler
      _6,_7,_8,_9,_10, \
      NAME,...) NAME
 
+// __VA_ARGS__ is forwarded twice: to IC_INNER_GET_MACRO (to pick the _N macro), and to the picked
+// macro. MSVC's traditional preprocessor would pass it as ONE argument both times, so each
+// forwarding is wrapped in IC_EXPAND (see ic_glue_macro.h). Conforming preprocessors are unaffected.
 #define IC_MAKE_CO_JOB(...) \
-    IC_INNER_GET_MACRO( \
+    IC_EXPAND(IC_EXPAND(IC_INNER_GET_MACRO( \
         __VA_ARGS__, \
         IC_INNER_MAKE_CO_JOB_10, \
         IC_INNER_MAKE_CO_JOB_9, \
@@ -172,13 +196,16 @@ typedef struct ic_co_scheduler
         IC_INNER_MAKE_CO_JOB_3, \
         IC_INNER_MAKE_CO_JOB_2, \
         IC_INNER_MAKE_CO_JOB_1, \
-    )(__VA_ARGS__)
+    ))(__VA_ARGS__))
 
 // ========== CO JOB ==========
 
 IC_HEADER_FUNC ic_co_job ic_make_co_job(void)
 {
-    return (ic_co_job){0};
+    // Every member is initialized explicitly (no compound literal, no {0}),
+    // so this is also valid C++ without missing-initializer warnings
+    const ic_co_job job = { { NULL }, 0 };
+    return job;
 }
 
 IC_HEADER_FUNC void ic_co_job_add_step(ic_co_job* const job, const ic_co_step step)
@@ -218,8 +245,17 @@ IC_HEADER_FUNC void ic_co_job_run(const ic_co_job* const job, void* const data)
 
 IC_HEADER_FUNC ic_co_scheduler ic_make_co_scheduler(void)
 {
-    ic_co_scheduler s = {0};
-    s.UNSAFE_PRIVATE_ACCESS_is_done = 1;
+    // Members in declaration order: jobs, job_count, runnable, runnable_count, total_credits, is_done.
+    // Spelled out (instead of {0}) so C++ does not warn about missing initializers;
+    // the remaining array elements are zero-initialized in both languages.
+    const ic_co_scheduler s = {
+        { { NULL, NULL, 0, 0, 0, 0 } },
+        0,
+        { NULL },
+        0,
+        0,
+        1
+    };
     return s;
 }
 
@@ -290,7 +326,7 @@ IC_HEADER_FUNC void ic_co_scheduler_tick(ic_co_scheduler* const s)
 
     // Set next job by score
     PRIVATE_ic_co_scheduled_job* j = NULL;
-    int best_score = -1; // auto updated to first element when j == NULL
+    long long best_score = -1; // auto updated to first element when j == NULL
     for (int i = 0; i < s->UNSAFE_PRIVATE_ACCESS_runnable_count; i++)
     {
         PRIVATE_ic_co_scheduled_job* job = s->UNSAFE_PRIVATE_ACCESS_runnable[i];
@@ -300,7 +336,7 @@ IC_HEADER_FUNC void ic_co_scheduler_tick(ic_co_scheduler* const s)
             continue;
         }
 
-        const int score = IC_CO_SCORE(job->priority, job->credits, job->state);
+        const long long score = IC_CO_SCORE(job->priority, job->credits, job->state);
 
         if ((j == NULL) || (score > best_score))
         {
@@ -323,19 +359,27 @@ IC_HEADER_FUNC void ic_co_scheduler_tick(ic_co_scheduler* const s)
     j->credits--;
     s->UNSAFE_PRIVATE_ACCESS_total_credits--;
 
-    // remove from runnable immediately if finished
-    // if (j->state >= j->job->step_count)
-    // {
-    //     for (int i = 0; i < s->runnable_count; i++)
-    //     {
-    //         if (s->runnable[i] == j)
-    //         {
-    //             s->runnable[i] = s->runnable[s->runnable_count - 1];
-    //             s->runnable_count--;
-    //             break;
-    //         }
-    //     }
-    // }
+    // When this step finished its job, report done right away if it was the last one,
+    // instead of needing one extra empty tick to discover that nothing is runnable.
+    // All jobs are checked (not just runnable ones), since a step may have added a new job.
+    if (j->state >= j->job->UNSAFE_PRIVATE_ACCESS_step_count)
+    {
+        int has_remaining_steps = 0;
+        for (int i = 0; i < s->UNSAFE_PRIVATE_ACCESS_job_count; i++)
+        {
+            const PRIVATE_ic_co_scheduled_job* const other = &s->UNSAFE_PRIVATE_ACCESS_jobs[i];
+            if (other->state < other->job->UNSAFE_PRIVATE_ACCESS_step_count)
+            {
+                has_remaining_steps = 1;
+                break;
+            }
+        }
+
+        if (!has_remaining_steps)
+        {
+            s->UNSAFE_PRIVATE_ACCESS_is_done = 1;
+        }
+    }
 }
 
 IC_HEADER_FUNC int ic_co_scheduler_is_done(const ic_co_scheduler* const s)
@@ -371,5 +415,9 @@ IC_HEADER_FUNC int ic_co_scheduler_credits(const ic_co_scheduler* const s)
     return s->UNSAFE_PRIVATE_ACCESS_total_credits;
 }
 
+
+#ifdef __cplusplus
+} // extern "C"
+#endif
 
 #endif // IC_CO_JOB_H

@@ -197,7 +197,62 @@ IHC_TEST(verify_get_result_fails_if_task_running)
     ic_task_join(&task);
 }
 
-typedef struct visibility_test_obj 
+static int wait_for_release_thread(void* arg)
+{
+    ic_atomic_i32* release = (ic_atomic_i32*)arg;
+    while (ic_atomic_load(release) == 0)
+    {
+        ic_thread_sleep(1);
+    }
+    return 7;
+}
+
+IHC_TEST(verify_task_is_running_immediately_after_init)
+{
+    ic_atomic_i32 release = ic_make_atomic(0);
+    ic_task task;
+    IHC_ASSERT(ic_task_init(&task, wait_for_release_thread, &release) == IC_CONCURRENCY_OK);
+
+    // No sleep: the task must count as running even before its thread has been scheduled
+    IHC_CHECK(ic_task_is_running(&task) == 1);
+    int result = -1;
+    IHC_CHECK(ic_task_get_result(&task, &result) == IC_CONCURRENCY_FAILURE);
+
+    ic_atomic_store(&release, 1);
+    IHC_ASSERT(ic_task_join(&task) == IC_CONCURRENCY_OK);
+    IHC_CHECK(ic_task_is_running(&task) == 0);
+    IHC_CHECK(ic_task_get_result(&task, &result) == IC_CONCURRENCY_OK);
+    IHC_CHECK(result == 7);
+}
+
+IHC_TEST(verify_task_can_be_detached_once_and_not_joined)
+{
+    IHC_CHECK(ic_task_detach(NULL) == IC_CONCURRENCY_NULLREF);
+
+    ic_atomic_i32 release = ic_make_atomic(0);
+    ic_task task;
+    IHC_ASSERT(ic_task_init(&task, wait_for_release_thread, &release) == IC_CONCURRENCY_OK);
+
+    IHC_CHECK(ic_task_detach(&task) == IC_CONCURRENCY_OK);
+    IHC_CHECK(ic_task_detach(&task) == IC_CONCURRENCY_ALREADY_JOINED);
+    IHC_CHECK(ic_task_join(&task) == IC_CONCURRENCY_ALREADY_JOINED);
+
+    // A detached task still reports its state; the ic_task must stay valid until it stops running
+    ic_atomic_store(&release, 1);
+    int waited_ms = 0;
+    while (ic_task_is_running(&task) && waited_ms < 10000)
+    {
+        ic_thread_sleep(1);
+        waited_ms++;
+    }
+    IHC_ASSERT(ic_task_is_running(&task) == 0);
+
+    int result = -1;
+    IHC_CHECK(ic_task_get_result(&task, &result) == IC_CONCURRENCY_OK);
+    IHC_CHECK(result == 7);
+}
+
+typedef struct visibility_test_obj
 {
     ic_atomic_i32 flag;
     int data;
@@ -217,10 +272,9 @@ static int visibility_test_reader_func(void* arg)
 
     while (ic_atomic_load(&t->flag) == 0) {}
 
-    // If memory ordering is broken, this *might* see stale data
-    IHC_CHECK(t->data == 123);
-
-    return 0;
+    // If memory ordering is broken, this *might* see stale data.
+    // Reported through the task result, as IHC_CHECK must not be called from worker threads.
+    return (t->data == 123) ? 1 : 0;
 }
 
 IHC_TEST(verify_memory_visibility_with_atomics)
@@ -231,11 +285,15 @@ IHC_TEST(verify_memory_visibility_with_atomics)
 
     ic_task writer, reader;
 
-    ic_task_init(&reader, visibility_test_reader_func, &vis_obj);
-    ic_task_init(&writer, visibility_test_writer_func, &vis_obj);
+    IHC_ASSERT(ic_task_init(&reader, visibility_test_reader_func, &vis_obj) == IC_CONCURRENCY_OK);
+    IHC_ASSERT(ic_task_init(&writer, visibility_test_writer_func, &vis_obj) == IC_CONCURRENCY_OK);
 
-    ic_task_join(&writer);
-    ic_task_join(&reader);
+    IHC_CHECK(ic_task_join(&writer) == IC_CONCURRENCY_OK);
+    IHC_CHECK(ic_task_join(&reader) == IC_CONCURRENCY_OK);
+
+    int reader_saw_data = 0;
+    IHC_CHECK(ic_task_get_result(&reader, &reader_saw_data) == IC_CONCURRENCY_OK);
+    IHC_CHECK(reader_saw_data == 1);
 }
 
 static int mutex_holder_thread(void* arg)

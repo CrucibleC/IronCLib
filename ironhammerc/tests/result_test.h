@@ -61,4 +61,33 @@ IHC_TEST(verify_try_macro_propagates_error_in_same_error_type_context)
     IHC_CHECK(AppError_eq(expected_error, err_prop.data.error));
 }
 
+#if IC_TRY_SINGLE_EVALUATION
+static int try_evaluation_count = 0;
+
+static FloatResult counted_failing_call(void)
+{
+    try_evaluation_count++;
+    return FloatResult_err(AppError_Timeout);
+}
+
+static IntResult try_with_function_call(void)
+{
+    IC_TRY_RETURN_ERR_AS(IntResult, counted_failing_call());
+    return IntResult_ok(1);
+}
+#endif
+
+IHC_TEST(verify_try_macro_evaluates_result_once_when_supported)
+{
+#if IC_TRY_SINGLE_EVALUATION
+    try_evaluation_count = 0;
+    const IntResult res = try_with_function_call();
+    IHC_ASSERT(!res.ok);
+    IHC_CHECK(AppError_eq(res.data.error, AppError_Timeout));
+    IHC_CHECK(try_evaluation_count == 1); // the fallback would call it twice on the error path
+#else
+    IHC_CHECK(1); // fallback build: result is documented to be evaluated twice on error
+#endif
+}
+
 #endif // IRON_HAMMER_C_TESTS_RESULT_TEST_H

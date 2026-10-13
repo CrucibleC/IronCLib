@@ -18,6 +18,9 @@ jobs:
   test:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash # Git Bash on Windows, so every step uses the same syntax
     strategy:
       fail-fast: false # let every platform finish even if one fails
       matrix:
@@ -28,12 +31,26 @@ jobs:
             os: ubuntu-24.04-arm
           - name: macOS ARM64
             os: macos-latest
+          - name: Windows x86_64
+            os: windows-latest
+          # Sanitizer runs (Linux only; MinGW and Apple toolchains lack some runtimes).
+          # ThreadSanitizer cannot be combined with AddressSanitizer, so it gets its own run.
+          - name: Linux x86_64 (ASan + UBSan)
+            os: ubuntu-latest
+            sanitizers: address,undefined
+          - name: Linux x86_64 (TSan)
+            os: ubuntu-latest
+            sanitizers: thread
+
+    env:
+      SANITIZERS: ${{ matrix.sanitizers }} # empty for normal runs, read by run_all.py
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
       - name: Set up Python
+        id: python
         uses: actions/setup-python@v5
         with:
           python-version: "3.x"
@@ -44,15 +61,42 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gcc clang cmake ninja-build
 
+      # Recent runner kernels use more mmap randomization bits than the sanitizer runtimes
+      # support, which makes them fail at startup ("unexpected memory mapping")
+      - name: Reduce ASLR entropy for sanitizers (Linux)
+        if: runner.os == 'Linux' && matrix.sanitizers
+        run: sudo sysctl -w vm.mmap_rnd_bits=28
+
       - name: Install build tools (macOS)
         if: runner.os == 'macOS'
         run: brew install gcc ninja
+
+      # gcc and clang come from MSYS2 UCRT64 (as in local Windows testing); MSVC and CMake are
+      # preinstalled on the runner. run_all.py finds Visual Studio itself through vswhere.
+      - name: Install build tools (Windows)
+        if: runner.os == 'Windows'
+        id: msys2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: false
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-clang
+            mingw-w64-ucrt-x86_64-ninja
+
+      # Put the MSYS2 toolchain ahead of other gcc/clang copies on the runner (Strawberry Perl, LLVM)
+      - name: Add MSYS2 toolchain to PATH (Windows)
+        if: runner.os == 'Windows'
+        run: cygpath -w "${{ steps.msys2.outputs.msys2-location }}/ucrt64/bin" >> "$GITHUB_PATH"
 
       - name: Show tool versions
         run: |
           cmake --version | head -n 1
           ninja --version
           clang --version | head -n 1
+          gcc --version | head -n 1
 
       - name: Run test matrix
-        run: python ironhammerc/run_all.py
+        # Use setup-python's interpreter explicitly, so an MSYS2 python on PATH can never shadow it
+        run: '"${{ steps.python.outputs.python-path }}" ironhammerc/run_all.py'

@@ -66,6 +66,16 @@
  - IHC_REPORT      : print summary
  - ihc_failures()  : number of failed tests
 
+ -----------------------------------------------------------
+
+ THREADS
+
+ IHC_ASSERT and IHC_CHECK are NOT thread-safe: they update plain global
+ counters, and IHC_ASSERT returns from the current function. Only call
+ them on the thread that runs the test. Worker threads should record
+ results (e.g. a failure count guarded by a mutex, an atomic, or the
+ thread's return value) that the test checks after joining them.
+
  ===========================================================
 
 EXAMPLE USAGE:

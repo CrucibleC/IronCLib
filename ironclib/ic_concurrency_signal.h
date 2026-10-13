@@ -14,6 +14,10 @@
  * limitations under the License.
  */
 
+// Included before the include guard on purpose, so the backend's configuration check
+// (IC_USE_C11_THREADS_AND_ATOMICS must not change within a translation unit) runs on every include.
+#include "ic_concurrency_backend.h"
+
 #ifndef IC_CONCURRENCY_SIGNAL_H
 #define IC_CONCURRENCY_SIGNAL_H
 
@@ -39,6 +43,10 @@ TAGS
 IC_CONCURRENCY_NULLPTR_PANIC(msg)
 Macro invoked when a null pointer is passed into a concurrency function.
 By default it is a no-op, but may be overridden to log, abort, etc.
+
+IC_CONCURRENCY_LOCK_PANIC(msg)
+Macro invoked when locking or unlocking a mutex fails, including the internal
+mutex of a gate or broadcast. Defaults to abort(). See ic_concurrency.h.
 
 ===============================================================================
 
@@ -74,9 +82,11 @@ int ic_gate_destroy(ic_gate* const gate);
 
 Behavior:
 - Waits for a single available permit.
-- Each call to ic_gate_signal releases exactly one waiting thread.
+- Each call to ic_gate_signal_one releases exactly one waiting thread.
 - If no thread is waiting, the signal is stored as a permit.
 - Each permit is consumed by exactly one waiter.
+- At most UINT32_MAX permits can be stored; a signal beyond that returns IC_CONCURRENCY_FAILURE
+  and stores nothing.
 
 Description:
     Auto-reset synchronization primitive.
@@ -110,9 +120,14 @@ Description:
 ===============================================================================
 */
 
-#include "ic_concurrency_backend.h"
 #include "ic_concurrency.h"
 #include <stdint.h>
+
+// C++ compatibility: C linkage for everything declared below. Placed after the #includes,
+// since system and other library headers must not be wrapped in an extern "C" block.
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 // ==============================================================================
 //  CONDITION VARIABLE
@@ -353,6 +368,13 @@ IC_HEADER_FUNC int ic_gate_signal_one(ic_gate* const g)
 
     ic_mutex_lock(&g->UNSAFE_PRIVATE_ACCESS_MUTEX);
 
+    // Wrapping back to 0 would silently lose every stored permit, so a full gate rejects the signal
+    if (g->UNSAFE_PRIVATE_ACCESS_PERMITS == UINT32_MAX)
+    {
+        ic_mutex_unlock(&g->UNSAFE_PRIVATE_ACCESS_MUTEX);
+        return IC_CONCURRENCY_FAILURE;
+    }
+
     g->UNSAFE_PRIVATE_ACCESS_PERMITS++;
 
     const int r = ic_condition_variable_notify_one(&g->UNSAFE_PRIVATE_ACCESS_CV);
@@ -386,6 +408,7 @@ typedef struct ic_broadcast
     ic_mutex UNSAFE_PRIVATE_ACCESS_MUTEX;
     ic_condition_variable UNSAFE_PRIVATE_ACCESS_CV;
     int UNSAFE_PRIVATE_ACCESS_SIGNALED; // 0 = not signaled, 1 = signaled
+    uint32_t UNSAFE_PRIVATE_ACCESS_GENERATION; // incremented by every signal_all, so a signal followed by a quick reset still wakes current waiters
 
 } ic_broadcast;
 
@@ -399,6 +422,7 @@ IC_HEADER_FUNC int ic_broadcast_init(ic_broadcast* const out_b)
     }
 
     out_b->UNSAFE_PRIVATE_ACCESS_SIGNALED = 0;
+    out_b->UNSAFE_PRIVATE_ACCESS_GENERATION = 0;
 
     int r = ic_mutex_init(&out_b->UNSAFE_PRIVATE_ACCESS_MUTEX);
     if (r != IC_CONCURRENCY_OK)
@@ -425,7 +449,9 @@ IC_HEADER_FUNC int ic_broadcast_wait(ic_broadcast* const b)
 
     ic_mutex_lock(&b->UNSAFE_PRIVATE_ACCESS_MUTEX);
 
-    while (!b->UNSAFE_PRIVATE_ACCESS_SIGNALED)
+    const uint32_t generation = b->UNSAFE_PRIVATE_ACCESS_GENERATION;
+
+    while (!b->UNSAFE_PRIVATE_ACCESS_SIGNALED && b->UNSAFE_PRIVATE_ACCESS_GENERATION == generation)
     {
         const int r = ic_condition_variable_wait(&b->UNSAFE_PRIVATE_ACCESS_CV, &b->UNSAFE_PRIVATE_ACCESS_MUTEX);
 
@@ -453,6 +479,7 @@ IC_HEADER_FUNC int ic_broadcast_signal_all(ic_broadcast* const b)
     ic_mutex_lock(&b->UNSAFE_PRIVATE_ACCESS_MUTEX);
 
     b->UNSAFE_PRIVATE_ACCESS_SIGNALED = 1;
+    b->UNSAFE_PRIVATE_ACCESS_GENERATION++;
 
     const int r = ic_condition_variable_notify_all(&b->UNSAFE_PRIVATE_ACCESS_CV);
 
@@ -492,5 +519,9 @@ IC_HEADER_FUNC int ic_broadcast_destroy(ic_broadcast* const b)
     const int r2 = ic_mutex_destroy(&b->UNSAFE_PRIVATE_ACCESS_MUTEX);
     return (r1 == IC_CONCURRENCY_OK && r2 == IC_CONCURRENCY_OK) ? IC_CONCURRENCY_OK : IC_CONCURRENCY_FAILURE;
 }
+
+#ifdef __cplusplus
+} // extern "C"
+#endif
 
 #endif // IC_CONCURRENCY_SIGNAL_H

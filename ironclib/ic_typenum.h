@@ -56,6 +56,7 @@ typedef struct {
 
 IC_HEADER_FUNC int Status_get(const Status v);
 IC_HEADER_FUNC int Status_eq(const Status a, const Status b);
+IC_HEADER_FUNC int Status_is_valid(const Status v);   // 1 if the value is one of the listed values
 IC_HEADER_FUNC const char* Status_to_string(const Status v);
 
 static const Status Status_Ok = {0};
@@ -63,10 +64,17 @@ static const Status Status_MechanicalFailure = {1};
 static const Status Status_ElectricalFailure = {2};
 static const Status Status_SoftwareFailure = {3};
 
+Notes:
+- Status_is_valid checks values coming from outside the program (files, network, other modules).
+  Since it is a switch over the list, using a value twice in a list is a compile error.
+- All functions are static inline. Clang warns about unused ones when IC_TYPENUM is expanded in a
+  .c file (not a header), so a typenum used in a single source file may need to use or silence them.
+
 ===============================================================================
 */
 
 #include "ic_inline.h"
+#include "ic_static_assert.h"
 #include "ic_glue_macro.h"
 
 /*
@@ -89,7 +97,18 @@ Core type + helpers
     \
     IC_HEADER_FUNC int IC_GLUE(name, _eq)(const name a, const name b) { \
         return a.IC_GLUE(name, _value) == b.IC_GLUE(name, _value); \
+    } \
+    \
+    IC_HEADER_FUNC int IC_GLUE(name, _is_valid)(const name v) { \
+        switch (IC_GLUE(name, _get)(v)) { \
+            LIST(IC_INNER_TYPENUM_IS_VALID_CASE, name) \
+            default: return 0; \
+        } \
     }
+
+// One case per listed value, so a value used twice in a list is a compile error (duplicate case)
+#define IC_INNER_TYPENUM_IS_VALID_CASE(Type, name, value, str) \
+    case value: return 1;
 
 
 /*

@@ -18,6 +18,18 @@
 #define IC_DISABLE_WARNINGS_H
 
 // This header is used internally within the library.
+//
+// IC_DISABLE_WARNINGS / IC_ENABLE_WARNINGS wrap macro-generated code (the ic_num_cast.h cast functions),
+// where comparisons are often constant or always true/false for a given pair of types by design.
+// What is suppressed differs per compiler, on purpose rather than by accident:
+// - Clang: everything (-Weverything). Clang has many fine-grained tautology and conversion warnings
+//   for this pattern, and listing them all would break as new Clang versions add more.
+// - GCC:   only -Wtype-limits, -Wunused and -Wsign-compare, the warnings the generated code triggers
+//   under -Wall -Wextra -Wpedantic. Stricter opt-in flags (e.g. -Wconversion, -Wsign-conversion,
+//   -Wfloat-conversion, -Wfloat-equal) are NOT suppressed and may need suppressing by the user.
+// - MSVC:  C4127 (constant conditional), C4100 / C4189 (unused parameter / variable) and
+//   C4056 (floating-point overflow in constant arithmetic), the warnings it gives under /W4.
+// - Other compilers: nothing, so the generated code may need manual warning suppression there.
 
 #if defined(_MSC_VER)
 // MSVC
@@ -28,7 +40,7 @@
     __pragma(warning(disable: 4189))  /* unused variable */ \
     __pragma(warning(disable: 4056))  /* FP overflow */
 #define IC_ENABLE_WARNINGS \
-    __pragma(warning(pop));
+    __pragma(warning(pop))
 
 // Clang
 #elif defined(__clang__)

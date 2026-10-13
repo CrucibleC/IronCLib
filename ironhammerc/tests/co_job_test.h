@@ -262,20 +262,17 @@ IHC_TEST(verify_scheduler_correctlty_ticks_and_runs_one_job)
     ic_co_scheduler_add_job(&sched, co_job_7_steps(), &test_data, 1, weight);
 
     int step = 0;
-    while (!ic_co_scheduler_is_done(&sched))
+    while (!ic_co_scheduler_is_done(&sched) && step < 7) // bounded so a regression cannot overrun expected_credits
     {
         ic_co_scheduler_tick(&sched);
-        
-        
-        if (!ic_co_scheduler_is_done(&sched))
-        {
-            IHC_CHECK(ic_co_scheduler_credits(&sched) == expected_credits[step]);
-            step++;
-            IHC_CHECK(test_data.step == step);
-        }
 
+        IHC_CHECK(ic_co_scheduler_credits(&sched) == expected_credits[step]);
+        step++;
+        IHC_CHECK(test_data.step == step);
     }
 
+    // Done is reported by the tick that runs the last step, with no extra empty tick needed
+    IHC_CHECK(step == 7);
     IHC_CHECK(test_data.step == 7);
     for (int i = 0; i < IC_CO_MAX_STEPS; i++)
     {
@@ -536,6 +533,56 @@ IHC_TEST(verify_scheduler_interleaves_jobs_with_default_scoring_system)
         IHC_CHECK(expected.tag == result.tag);
         IHC_CHECK(expected.step == result.step);
     }
+}
+
+typedef struct co_job_spawn_ctx
+{
+    ic_co_scheduler* sched;
+    const ic_co_job* child;
+    int parent_steps;
+    int child_steps;
+} co_job_spawn_ctx;
+
+static void co_job_spawn_child_step(void* data)
+{
+    co_job_spawn_ctx* const ctx = (co_job_spawn_ctx*)data;
+    ctx->parent_steps++;
+    ic_co_scheduler_add_job(ctx->sched, ctx->child, ctx, 1, 1);
+}
+
+static void co_job_spawned_child_step(void* data)
+{
+    co_job_spawn_ctx* const ctx = (co_job_spawn_ctx*)data;
+    ctx->child_steps++;
+}
+
+IHC_TEST(verify_scheduler_is_not_done_when_last_step_adds_a_job)
+{
+    ic_co_scheduler sched = ic_make_co_scheduler();
+    const ic_co_job parent = IC_MAKE_CO_JOB(co_job_spawn_child_step);
+    const ic_co_job child = IC_MAKE_CO_JOB(co_job_spawned_child_step, co_job_spawned_child_step);
+    co_job_spawn_ctx ctx = { NULL, NULL, 0, 0 };
+    ctx.sched = &sched;
+    ctx.child = &child;
+    ic_co_scheduler_add_job(&sched, &parent, &ctx, 1, 1);
+
+    // The parent's only (and last) step adds a new job, so the scheduler must not report done
+    ic_co_scheduler_tick(&sched);
+    IHC_CHECK(ctx.parent_steps == 1);
+    IHC_CHECK(ic_co_scheduler_job_count(&sched) == 2);
+    IHC_CHECK(!ic_co_scheduler_is_done(&sched));
+
+    int ticks = 0;
+    while (!ic_co_scheduler_is_done(&sched) && ticks < 10)
+    {
+        ic_co_scheduler_tick(&sched);
+        ticks++;
+    }
+
+    // Done right after the child's last step, with no extra empty tick
+    IHC_CHECK(ctx.child_steps == 2);
+    IHC_CHECK(ticks == 2);
+    IHC_CHECK(ic_co_scheduler_is_done(&sched));
 }
 
 #endif // IRON_HAMMER_C_TESTS_CO_JOB_TEST_H

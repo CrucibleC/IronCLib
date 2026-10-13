@@ -55,4 +55,15 @@ IHC_TEST(verify_typenum_provides_correct_strings)
     IHC_CHECK(strcmp(battery_str, battery_typenum_str) == 0);
 }
 
+IHC_TEST(verify_typenum_validates_values_from_outside)
+{
+    IHC_CHECK(UseMode_is_valid(UseMode_Quality));
+    IHC_CHECK(UseMode_is_valid(UseMode_Performance));
+    IHC_CHECK(UseMode_is_valid(UseMode_Battery));
+
+    // e.g. a byte read from a file or network that is not one of the listed values
+    const UseMode unknown = { 7 };
+    IHC_CHECK(!UseMode_is_valid(unknown));
+}
+
 #endif // IRON_HAMMER_C_TESTS_TYPENUM_TEST_H

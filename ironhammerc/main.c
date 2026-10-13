@@ -10,6 +10,10 @@ do { \
 // Set to 1 to enable stress tests, which can be time-consuming; 0 to disable them for quicker runs
 #define RUN_STRESS_TESTS 0
 
+// IronCLib concurrency configuration must come before the first IronCLib include (see ic_concurrency.h).
+// The nullptr tests pass NULL on purpose, so the panic stays silent instead of logging each call.
+#define IC_CONCURRENCY_NULLPTR_PANIC(msg) ((void)(msg))
+
 // Verify the build really uses the C standard and optimization level it was configured for
 #if defined(IHC_EXPECTED_STDC_VERSION)
     #if !defined(__STDC_VERSION__) || (__STDC_VERSION__ != IHC_EXPECTED_STDC_VERSION)
@@ -39,6 +43,7 @@ do { \
 #include "tests/concurrency_test.h"
 #include "tests/concurrency_signal_test.h"
 #include "tests/co_job_test.h"
+#include "tests/portability_test.h"
 
 IC_STATIC_ASSERT(8 == 2 * 4, "A simple verification that the static assert macro works correctly");
 
@@ -53,6 +58,8 @@ int main(void) {
     {
         // ic_static_assert.h
         IHC_TEST_ENTRY(verify_static_assert_works_inside_functions),
+        IHC_TEST_ENTRY(verify_portable_static_assert_works_inside_functions),
+        IHC_TEST_ENTRY(verify_portable_alignof_matches_native_alignof),
         // ic_inline.h
         IHC_TEST_ENTRY(verify_header_functions_can_be_used_in_multiple_source_files),
         // ic_memory.h
@@ -60,6 +67,8 @@ int main(void) {
         IHC_TEST_ENTRY(verify_memory_protects_against_zero_size),
         IHC_TEST_ENTRY(verify_memory_protects_against_overflow),
         IHC_TEST_ENTRY(verify_memory_allocates_valid_array),
+        IHC_TEST_ENTRY(verify_memory_handles_every_integer_size_type),
+        IHC_TEST_ENTRY(verify_memory_evaluates_size_once_when_supported),
         // ic_bounded_loop.h
         IHC_TEST_ENTRY(verify_bounded_while_prevents_infinite_loops),
         IHC_TEST_ENTRY(verify_bounded_while_works_as_normal_within_bounds),
@@ -71,6 +80,7 @@ int main(void) {
         IHC_TEST_ENTRY(verify_typenum_internal_values_are_correct),
         IHC_TEST_ENTRY(verify_typenum_equality_function_works),
         IHC_TEST_ENTRY(verify_typenum_provides_correct_strings),
+        IHC_TEST_ENTRY(verify_typenum_validates_values_from_outside),
         // ic_num_cast.h
         IHC_TEST_ENTRY(verify_simple_same_bit_cast_gives_expected_value),
         IHC_TEST_ENTRY(verify_floating_to_unsigned_stays_within_bounds),
@@ -82,6 +92,8 @@ int main(void) {
         IHC_TEST_ENTRY(verify_f32_to_32_bit_integer_boundaries_are_exact),
         IHC_TEST_ENTRY(verify_floating_to_small_integer_boundaries_are_exact),
         IHC_TEST_ENTRY(verify_floating_to_integer_assert_policy_rejects_out_of_range),
+        IHC_TEST_ENTRY(verify_integer_casts_clamp_to_custom_ranges),
+        IHC_TEST_ENTRY(verify_floating_casts_clamp_to_custom_ranges),
         // ic_opaque_storage.h
         IHC_TEST_ENTRY(verify_opaque_strict_object_can_be_initiated_with_zeroes),
         IHC_TEST_ENTRY(verify_opaque_strict_object_can_set_and_get_values),
@@ -92,6 +104,7 @@ int main(void) {
         IHC_TEST_ENTRY(verify_ok_and_err_functions_work_for_typenum_error),
         IHC_TEST_ENTRY(verify_optional_accessor_macros_work),
         IHC_TEST_ENTRY(verify_try_macro_propagates_error_in_same_error_type_context),
+        IHC_TEST_ENTRY(verify_try_macro_evaluates_result_once_when_supported),
         // ic_concurrency.h
         IHC_TEST_ENTRY(verify_atomic_int_can_get_and_set_values_correctly),
         IHC_TEST_ENTRY(verify_atomic_does_not_crash_when_given_nullptr),
@@ -104,6 +117,8 @@ int main(void) {
         IHC_TEST_ENTRY(verify_mutex_prevents_race_conditions),
         IHC_TEST_ENTRY(verify_task_cannot_be_joined_twice),
         IHC_TEST_ENTRY(verify_get_result_fails_if_task_running),
+        IHC_TEST_ENTRY(verify_task_is_running_immediately_after_init),
+        IHC_TEST_ENTRY(verify_task_can_be_detached_once_and_not_joined),
         IHC_TEST_ENTRY(verify_memory_visibility_with_atomics),
         IHC_TEST_ENTRY(verify_mutex_trylock_fails_under_contention),
         // ic_concurrency_signal.h
@@ -114,10 +129,13 @@ int main(void) {
         IHC_TEST_ENTRY(verify_gate_nullptr_safety),
         IHC_TEST_ENTRY(verify_gate_releases_exactly_one_thread_per_signal),
         IHC_TEST_ENTRY(verify_gate_is_lossless),
+        IHC_TEST_ENTRY(verify_gate_rejects_signals_when_permits_are_full),
         IHC_TEST_ENTRY(verify_broadcast_nullptr_safety),
         IHC_TEST_ENTRY(verify_broadcast_wakes_all_waiters),
         IHC_TEST_ENTRY(verify_broadcast_is_sticky_until_reset),
         IHC_TEST_ENTRY(verify_broadcast_reset_blocks_new_waiters),
+        IHC_TEST_ENTRY(verify_broadcast_signal_then_reset_wakes_current_waiters),
+        IHC_TEST_ENTRY(verify_task_can_only_be_joined_once_under_contention),
         #if RUN_STRESS_TESTS
         IHC_TEST_ENTRY(stress_gate_interleave_deterministic),
         IHC_TEST_ENTRY(stress_gate_signal_before_wait_deterministic),
@@ -135,12 +153,13 @@ int main(void) {
         IHC_TEST_ENTRY(verify_task_pool_close_drain_completes_all_tasks),
         IHC_TEST_ENTRY(verify_task_pool_close_abort_drops_queued_tasks),
         IHC_TEST_ENTRY(verify_task_pool_reaches_timeout_for_blocking_tasks),
+        IHC_TEST_ENTRY(verify_task_pool_abort_marks_queued_completions_as_interrupted),
         IHC_TEST_ENTRY(verify_task_pool_can_safely_be_destroyed_without_manually_closing),
         IHC_TEST_ENTRY(verify_task_pool_can_fill_up_and_safely_reject_excess_tasks),
         #if RUN_STRESS_TESTS
         IHC_TEST_ENTRY(stress_task_pool_handles_high_contention_submissions),
         IHC_TEST_ENTRY(stress_task_pool_survives_shutdown_submission_races),
-        IHC_TEST_ENTRY(stress_task_pool_survives_repeated_lifecycle_cycles)
+        IHC_TEST_ENTRY(stress_task_pool_survives_repeated_lifecycle_cycles),
         #endif
         // ic_co_job.h
         IHC_TEST_ENTRY(verify_co_job_add_detects_nullptr_and_too_many_steps),
@@ -159,10 +178,12 @@ int main(void) {
         IHC_TEST_ENTRY(verify_scheduler_prioritizes_steps_by_priority),
         IHC_TEST_ENTRY(verify_scheduler_runs_steps_in_order_for_weighted_jobs),
         IHC_TEST_ENTRY(verify_scheduler_interleaves_jobs_with_default_scoring_system),
+        IHC_TEST_ENTRY(verify_scheduler_is_not_done_when_last_step_adds_a_job),
     };
 
     IHC_RUN(iron_c_lib_tests);
     IHC_REPORT();
 
-    return ihc_failures();
+    // Exit codes are truncated to 8 bits on most platforms, so 256 failures would read as success
+    return (ihc_failures() == 0) ? 0 : 1;
 }

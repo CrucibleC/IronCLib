@@ -11,6 +11,10 @@
 #include "ironclib/ic_static_assert.h"
 #include "docs/premade/parallel_work.h"
 
+// NOTE: IHC_CHECK / IHC_ASSERT are not thread-safe (see ic_hammer.h), so worker threads never call them.
+// Threads record failures in their test data instead, and the test checks them on the main thread
+// after joining. Values a thread writes are only read under the same mutex, or after joining it.
+
 // ==============================================================================
 // CONDITION VARIABLE TESTS
 // ==============================================================================
@@ -22,6 +26,7 @@ typedef struct condition_variable_test_data
 
     int ready;
     int wake_count;
+    int thread_failures; // guarded by mutex
 } condition_variable_test_data;
 
 static int condition_variable_waiter_thread(void* arg)
@@ -32,7 +37,11 @@ static int condition_variable_waiter_thread(void* arg)
 
     while (!data->ready)
     {
-        IHC_CHECK(ic_condition_variable_wait(&data->cv, &data->mutex) == IC_CONCURRENCY_OK);
+        // wait returns with the mutex held again, so the failure count stays guarded
+        if (ic_condition_variable_wait(&data->cv, &data->mutex) != IC_CONCURRENCY_OK)
+        {
+            data->thread_failures++;
+        }
     }
 
     data->wake_count++;
@@ -66,6 +75,7 @@ IHC_TEST(verify_condition_variable_can_signal_waiting_thread)
     ic_task_join(&waiter);
 
     IHC_CHECK(data.wake_count == 1);
+    IHC_CHECK(data.thread_failures == 0);
 
     IHC_CHECK(ic_condition_variable_destroy(&data.cv) == IC_CONCURRENCY_OK);
     IHC_CHECK(ic_mutex_destroy(&data.mutex) == IC_CONCURRENCY_OK);
@@ -101,6 +111,7 @@ IHC_TEST(verify_condition_variable_notify_all_wakes_all_waiters)
     ic_task_join(&t4);
 
     IHC_CHECK(data.wake_count == 4);
+    IHC_CHECK(data.thread_failures == 0);
 
     ic_condition_variable_destroy(&data.cv);
     ic_mutex_destroy(&data.mutex);
@@ -141,8 +152,11 @@ IHC_TEST(verify_condition_variable_wait_rechecks_predicate)
 
     ic_thread_sleep(200);
 
-    // Thread should still be blocked
-    IHC_CHECK(data.wake_count == 0);
+    // Thread should still be blocked (read under the mutex, as the waiter writes it under the mutex)
+    ic_mutex_lock(&data.mutex);
+    const int wake_count_while_blocked = data.wake_count;
+    ic_mutex_unlock(&data.mutex);
+    IHC_CHECK(wake_count_while_blocked == 0);
 
     ic_mutex_lock(&data.mutex);
 
@@ -155,6 +169,7 @@ IHC_TEST(verify_condition_variable_wait_rechecks_predicate)
     ic_task_join(&waiter);
 
     IHC_CHECK(data.wake_count == 1);
+    IHC_CHECK(data.thread_failures == 0);
 
     ic_condition_variable_destroy(&data.cv);
     ic_mutex_destroy(&data.mutex);
@@ -176,20 +191,34 @@ typedef struct gate_test_data
 {
     ic_gate gate;
     ic_mutex mutex;
-    int wake_count;
+    int wake_count;      // guarded by mutex
+    int thread_failures; // guarded by mutex
 
 } gate_test_data;
 
 static int gate_waiter_thread(void* arg)
 {
     gate_test_data* data = (gate_test_data*)arg;
-    IHC_CHECK(ic_gate_wait(&data->gate) == IC_CONCURRENCY_OK);
+    const int wait_result = ic_gate_wait(&data->gate);
 
     ic_mutex_lock(&data->mutex);
+    if (wait_result != IC_CONCURRENCY_OK)
+    {
+        data->thread_failures++;
+    }
     data->wake_count++;
     ic_mutex_unlock(&data->mutex);
 
     return 0;
+}
+
+// Reads the wake count under the mutex, as waiter threads may still be writing it
+static int gate_test_wake_count(gate_test_data* const data)
+{
+    ic_mutex_lock(&data->mutex);
+    const int wake_count = data->wake_count;
+    ic_mutex_unlock(&data->mutex);
+    return wake_count;
 }
 
 IHC_TEST(verify_gate_releases_exactly_one_thread_per_signal)
@@ -210,19 +239,21 @@ IHC_TEST(verify_gate_releases_exactly_one_thread_per_signal)
 
     ic_gate_signal_one(&data.gate);
     ic_thread_sleep(50);
-    IHC_CHECK(data.wake_count == 1);
+    IHC_CHECK(gate_test_wake_count(&data) == 1);
 
     ic_gate_signal_one(&data.gate);
     ic_thread_sleep(50);
-    IHC_CHECK(data.wake_count == 2);
+    IHC_CHECK(gate_test_wake_count(&data) == 2);
 
     ic_gate_signal_one(&data.gate);
     ic_thread_sleep(50);
-    IHC_CHECK(data.wake_count == 3);
+    IHC_CHECK(gate_test_wake_count(&data) == 3);
 
     ic_task_join(&t1);
     ic_task_join(&t2);
     ic_task_join(&t3);
+
+    IHC_CHECK(data.thread_failures == 0);
 
     ic_gate_destroy(&data.gate);
     ic_mutex_destroy(&data.mutex);
@@ -245,9 +276,31 @@ IHC_TEST(verify_gate_is_lossless)
     ic_task_join(&t);
 
     IHC_CHECK(data.wake_count == 1);
+    IHC_CHECK(data.thread_failures == 0);
 
     ic_gate_destroy(&data.gate);
     ic_mutex_destroy(&data.mutex);
+}
+
+IHC_TEST(verify_gate_rejects_signals_when_permits_are_full)
+{
+    ic_gate gate;
+    IHC_ASSERT(ic_gate_init(&gate) == IC_CONCURRENCY_OK);
+
+    // Reaching the limit with real signals would take billions of calls, so start just below it
+    gate.UNSAFE_PRIVATE_ACCESS_PERMITS = UINT32_MAX - 1;
+
+    IHC_CHECK(ic_gate_signal_one(&gate) == IC_CONCURRENCY_OK);
+    IHC_CHECK(gate.UNSAFE_PRIVATE_ACCESS_PERMITS == UINT32_MAX);
+    IHC_CHECK(ic_gate_signal_one(&gate) == IC_CONCURRENCY_FAILURE);
+    IHC_CHECK(gate.UNSAFE_PRIVATE_ACCESS_PERMITS == UINT32_MAX); // not wrapped to 0
+
+    // Consuming a permit makes room for exactly one more signal
+    IHC_CHECK(ic_gate_wait(&gate) == IC_CONCURRENCY_OK);
+    IHC_CHECK(ic_gate_signal_one(&gate) == IC_CONCURRENCY_OK);
+    IHC_CHECK(ic_gate_signal_one(&gate) == IC_CONCURRENCY_FAILURE);
+
+    IHC_CHECK(ic_gate_destroy(&gate) == IC_CONCURRENCY_OK);
 }
 
 // ==============================================================================
@@ -267,20 +320,34 @@ typedef struct broadcast_test_data
 {
     ic_broadcast broadcast;
     ic_mutex mutex;
-    int wake_count;
+    int wake_count;      // guarded by mutex
+    int thread_failures; // guarded by mutex
 } broadcast_test_data;
 
 static int broadcast_waiter_thread(void* arg)
 {
     broadcast_test_data* data = (broadcast_test_data*)arg;
 
-    IHC_CHECK(ic_broadcast_wait(&data->broadcast) == IC_CONCURRENCY_OK);
+    const int wait_result = ic_broadcast_wait(&data->broadcast);
 
     ic_mutex_lock(&data->mutex);
+    if (wait_result != IC_CONCURRENCY_OK)
+    {
+        data->thread_failures++;
+    }
     data->wake_count++;
     ic_mutex_unlock(&data->mutex);
 
     return 0;
+}
+
+// Reads the wake count under the mutex, as waiter threads may still be writing it
+static int broadcast_test_wake_count(broadcast_test_data* const data)
+{
+    ic_mutex_lock(&data->mutex);
+    const int wake_count = data->wake_count;
+    ic_mutex_unlock(&data->mutex);
+    return wake_count;
 }
 
 IHC_TEST(verify_broadcast_wakes_all_waiters)
@@ -306,6 +373,7 @@ IHC_TEST(verify_broadcast_wakes_all_waiters)
     ic_task_join(&t4);
 
     IHC_CHECK(data.wake_count == 4);
+    IHC_CHECK(data.thread_failures == 0);
 
     ic_broadcast_destroy(&data.broadcast);
     ic_mutex_destroy(&data.mutex);
@@ -339,13 +407,14 @@ IHC_TEST(verify_broadcast_is_sticky_until_reset)
     ic_task_init(&t1, broadcast_waiter_thread, &data);
     ic_thread_sleep(50);
 
-    IHC_CHECK(data.wake_count == 0);
+    IHC_CHECK(broadcast_test_wake_count(&data) == 0);
 
     ic_broadcast_signal_all(&data.broadcast);
 
     ic_task_join(&t1);
 
     IHC_CHECK(data.wake_count == 1);
+    IHC_CHECK(data.thread_failures == 0);
 
     ic_broadcast_destroy(&data.broadcast);
     ic_mutex_destroy(&data.mutex);
@@ -374,7 +443,7 @@ IHC_TEST(verify_broadcast_reset_blocks_new_waiters)
     ic_thread_sleep(100);
 
     // If reset works correctly, this MUST still be 0
-    IHC_CHECK(data.wake_count == 0);
+    IHC_CHECK(broadcast_test_wake_count(&data) == 0);
 
     // Step 4: now signal again
     IHC_CHECK(ic_broadcast_signal_all(&data.broadcast) == IC_CONCURRENCY_OK);
@@ -383,9 +452,125 @@ IHC_TEST(verify_broadcast_reset_blocks_new_waiters)
 
     // Now it should pass
     IHC_CHECK(data.wake_count == 1);
+    IHC_CHECK(data.thread_failures == 0);
 
     ic_broadcast_destroy(&data.broadcast);
     ic_mutex_destroy(&data.mutex);
+}
+
+IHC_TEST(verify_broadcast_signal_then_reset_wakes_current_waiters)
+{
+    broadcast_test_data data = {0};
+
+    IHC_ASSERT(ic_broadcast_init(&data.broadcast) == IC_CONCURRENCY_OK);
+    IHC_ASSERT(ic_mutex_init(&data.mutex) == IC_CONCURRENCY_OK);
+
+    ic_task t1, t2;
+    IHC_ASSERT(ic_task_init(&t1, broadcast_waiter_thread, &data) == IC_CONCURRENCY_OK);
+    IHC_ASSERT(ic_task_init(&t2, broadcast_waiter_thread, &data) == IC_CONCURRENCY_OK);
+
+    ic_thread_sleep(100); // let both waiters block
+
+    // Pulse: waiters that were blocked during the signal must wake even though the reset follows at once
+    IHC_CHECK(ic_broadcast_signal_all(&data.broadcast) == IC_CONCURRENCY_OK);
+    IHC_CHECK(ic_broadcast_reset(&data.broadcast) == IC_CONCURRENCY_OK);
+
+    int woken = 0;
+    for (int i = 0; i < 2000 && woken < 2; i++)
+    {
+        ic_mutex_lock(&data.mutex);
+        woken = data.wake_count;
+        ic_mutex_unlock(&data.mutex);
+        ic_thread_sleep(1);
+    }
+    IHC_CHECK(woken == 2);
+
+    // Release any waiter a regression left blocked, so the test fails instead of hanging
+    ic_broadcast_signal_all(&data.broadcast);
+    ic_task_join(&t1);
+    ic_task_join(&t2);
+    IHC_CHECK(data.thread_failures == 0);
+
+    ic_broadcast_destroy(&data.broadcast);
+    ic_mutex_destroy(&data.mutex);
+}
+
+#define JOIN_RACE_THREADS 4
+
+typedef struct join_race_ctx
+{
+    ic_task* target;
+    ic_broadcast start;
+    ic_atomic_i32 release_target;
+    ic_atomic_i32 ok_count;
+    ic_atomic_i32 already_joined_count;
+} join_race_ctx;
+
+static int join_race_target_thread(void* arg)
+{
+    join_race_ctx* const ctx = (join_race_ctx*)arg;
+    while (ic_atomic_load(&ctx->release_target) == 0)
+    {
+        ic_thread_sleep(1);
+    }
+    return 0;
+}
+
+static int join_race_joiner_thread(void* arg)
+{
+    join_race_ctx* const ctx = (join_race_ctx*)arg;
+    (void)ic_broadcast_wait(&ctx->start);
+
+    const int result = ic_task_join(ctx->target);
+    if (result == IC_CONCURRENCY_OK)
+    {
+        (void)ic_atomic_fetch_add(&ctx->ok_count, 1);
+    }
+    else if (result == IC_CONCURRENCY_ALREADY_JOINED)
+    {
+        (void)ic_atomic_fetch_add(&ctx->already_joined_count, 1);
+    }
+    return 0;
+}
+
+IHC_TEST(verify_task_can_only_be_joined_once_under_contention)
+{
+    join_race_ctx ctx;
+    ic_task target;
+    ctx.target = &target;
+    ctx.release_target = ic_make_atomic(0);
+    ctx.ok_count = ic_make_atomic(0);
+    ctx.already_joined_count = ic_make_atomic(0);
+    IHC_ASSERT(ic_broadcast_init(&ctx.start) == IC_CONCURRENCY_OK);
+    IHC_ASSERT(ic_task_init(&target, join_race_target_thread, &ctx) == IC_CONCURRENCY_OK);
+
+    ic_task joiners[JOIN_RACE_THREADS];
+    for (int i = 0; i < JOIN_RACE_THREADS; i++)
+    {
+        IHC_ASSERT(ic_task_init(&joiners[i], join_race_joiner_thread, &ctx) == IC_CONCURRENCY_OK);
+    }
+
+    ic_thread_sleep(50); // let every joiner block on the start signal
+    IHC_ASSERT(ic_broadcast_signal_all(&ctx.start) == IC_CONCURRENCY_OK);
+
+    // The losers return at once, while the winner stays blocked in the join until the target exits
+    int waited_ms = 0;
+    while (ic_atomic_load(&ctx.already_joined_count) < JOIN_RACE_THREADS - 1 && waited_ms < 10000)
+    {
+        ic_thread_sleep(1);
+        waited_ms++;
+    }
+    ic_atomic_store(&ctx.release_target, 1);
+
+    for (int i = 0; i < JOIN_RACE_THREADS; i++)
+    {
+        IHC_CHECK(ic_task_join(&joiners[i]) == IC_CONCURRENCY_OK);
+    }
+
+    IHC_CHECK(ic_atomic_load(&ctx.ok_count) == 1);
+    IHC_CHECK(ic_atomic_load(&ctx.already_joined_count) == JOIN_RACE_THREADS - 1);
+
+    IHC_CHECK(ic_broadcast_destroy(&ctx.start) == IC_CONCURRENCY_OK);
 }
 
 // ==============================================================================
@@ -415,6 +600,15 @@ static int gate_worker(void* arg)
     ic_mutex_unlock(&c->mutex);
 
     return 0;
+}
+
+// Reads the wake count under the mutex, as worker threads may still be writing it
+static int gate_stress_wakes(gate_stress_ctx* const c)
+{
+    ic_mutex_lock(&c->mutex);
+    const int wakes = c->wakes;
+    ic_mutex_unlock(&c->mutex);
+    return wakes;
 }
 
 IHC_TEST(stress_gate_interleave_deterministic)
@@ -546,7 +740,7 @@ IHC_TEST(stress_gate_consumes_permits_correctly)
 
         ic_thread_sleep(2);
 
-        IHC_CHECK(c.wakes == 0);
+        IHC_CHECK(gate_stress_wakes(&c) == 0);
 
         for (int i = 0; i < GATE_THREADS; i++)
         {
@@ -572,20 +766,34 @@ typedef struct bc_ctx
 {
     ic_broadcast bc;
     ic_mutex mutex;
-    int wakes;
+    int wakes;           // guarded by mutex
+    int thread_failures; // guarded by mutex
 } bc_ctx;
 
 static int bc_worker(void* arg)
 {
     bc_ctx* c = arg;
 
-    IHC_CHECK(ic_broadcast_wait(&c->bc) == IC_CONCURRENCY_OK);
+    const int wait_result = ic_broadcast_wait(&c->bc);
 
     ic_mutex_lock(&c->mutex);
+    if (wait_result != IC_CONCURRENCY_OK)
+    {
+        c->thread_failures++;
+    }
     c->wakes++;
     ic_mutex_unlock(&c->mutex);
 
     return 0;
+}
+
+// Reads the wake count under the mutex, as worker threads may still be writing it
+static int bc_wakes(bc_ctx* const c)
+{
+    ic_mutex_lock(&c->mutex);
+    const int wakes = c->wakes;
+    ic_mutex_unlock(&c->mutex);
+    return wakes;
 }
 
 IHC_TEST(stress_broadcast_deterministic_signal_reset_interleave)
@@ -637,6 +845,7 @@ IHC_TEST(stress_broadcast_deterministic_signal_reset_interleave)
         IHC_CHECK(c.wakes == BC_THREADS);
     }
 
+    IHC_CHECK(c.thread_failures == 0);
     IHC_CHECK(ic_broadcast_destroy(&c.bc) == IC_CONCURRENCY_OK);
     IHC_CHECK(ic_mutex_destroy(&c.mutex) == IC_CONCURRENCY_OK);
 }
@@ -695,6 +904,7 @@ IHC_TEST(stress_broadcast_signal_before_wait_deterministic)
         IHC_CHECK(c.wakes == BC_THREADS);
     }
 
+    IHC_CHECK(c.thread_failures == 0);
     IHC_CHECK(ic_broadcast_destroy(&c.bc) == IC_CONCURRENCY_OK);
     IHC_CHECK(ic_mutex_destroy(&c.mutex) == IC_CONCURRENCY_OK);
 }
@@ -721,7 +931,7 @@ IHC_TEST(stress_broadcast_reset_reblocks_waiters)
 
         ic_thread_sleep(2);
 
-        IHC_CHECK(c.wakes == 0);
+        IHC_CHECK(bc_wakes(&c) == 0);
 
         IHC_ASSERT(ic_broadcast_signal_all(&c.bc) == IC_CONCURRENCY_OK);
 
@@ -743,7 +953,7 @@ IHC_TEST(stress_broadcast_reset_reblocks_waiters)
 
         ic_thread_sleep(2);
 
-        IHC_CHECK(c.wakes == 0);
+        IHC_CHECK(bc_wakes(&c) == 0);
 
         IHC_ASSERT(ic_broadcast_signal_all(&c.bc) == IC_CONCURRENCY_OK);
 
@@ -755,6 +965,7 @@ IHC_TEST(stress_broadcast_reset_reblocks_waiters)
         IHC_CHECK(c.wakes == BC_THREADS);
     }
 
+    IHC_CHECK(c.thread_failures == 0);
     IHC_CHECK(ic_broadcast_destroy(&c.bc) == IC_CONCURRENCY_OK);
     IHC_CHECK(ic_mutex_destroy(&c.mutex) == IC_CONCURRENCY_OK);
 }
@@ -889,7 +1100,7 @@ IHC_TEST(verify_task_pool_rejects_null_arguments)
     IHC_CHECK(AppError_eq(pw_task_pool_submit(&pool, do_nothing, NULL, &completion), AppError_NoError));
     IHC_ASSERT(AppError_eq(pw_task_completion_wait(NULL, 1, TASK_TEST_WAIT_TIMEOUT), AppError_NullRef));
     IHC_ASSERT(AppError_eq(pw_task_completion_wait(&completion, -1, TASK_TEST_WAIT_TIMEOUT), AppError_Argument));
-    IHC_ASSERT(AppError_eq(pw_task_completion_wait(&completion, 1, -1), AppError_Argument));
+    IHC_ASSERT(AppError_eq(pw_task_completion_wait(&completion, 1, -2), AppError_Argument)); // -1 is PW_TASK_COMPLETION_WAIT_FOREVER
 
     IHC_ASSERT(AppError_eq(pw_task_pool_close(&pool, PwTaskPoolClose_Abort, TASK_TEST_WAIT_TIMEOUT), AppError_NoError));
     IHC_CHECK(AppError_eq(pw_task_pool_destroy(&pool), AppError_NoError));
@@ -1093,6 +1304,16 @@ IHC_TEST(verify_task_pool_reaches_timeout_for_blocking_tasks)
         pw_task_completion_wait(&first_completion, 1, 100),
         AppError_Timeout
     ));
+    // A zero retry period must still time out instead of spinning forever
+    IHC_CHECK(AppError_eq(
+        pw_task_completion_wait(&first_completion, 0, 50),
+        AppError_Timeout
+    ));
+    // A zero timeout only checks once
+    IHC_CHECK(AppError_eq(
+        pw_task_completion_wait(&first_completion, 1, 0),
+        AppError_Timeout
+    ));
     IHC_CHECK(AppError_eq(
         pw_task_pool_close(&pool, PwTaskPoolClose_Drain, 100),
         AppError_Timeout
@@ -1110,6 +1331,43 @@ IHC_TEST(verify_task_pool_reaches_timeout_for_blocking_tasks)
         AppError_NoError
     ));
 
+    IHC_CHECK(AppError_eq(pw_task_pool_destroy(&pool), AppError_NoError));
+    IHC_CHECK(ic_broadcast_destroy(&broadcast) == IC_CONCURRENCY_OK);
+}
+
+IHC_TEST(verify_task_pool_abort_marks_queued_completions_as_interrupted)
+{
+    PwTaskPool pool;
+    IHC_ASSERT(AppError_eq(pw_task_pool_init(&pool, TASKPOOL_THREADS), AppError_NoError));
+    ic_broadcast broadcast;
+    IHC_ASSERT(ic_broadcast_init(&broadcast) == IC_CONCURRENCY_OK);
+
+    // Occupy every worker, so the last task can only ever be queued, never running
+    for (int i = 0; i < TASKPOOL_THREADS; i++)
+    {
+        IHC_ASSERT(AppError_eq(
+            pw_task_pool_submit(&pool, worker_stuck_until_signaled, &broadcast, NULL),
+            AppError_NoError
+        ));
+    }
+    PwTaskCompletion queued_completion;
+    IHC_ASSERT(AppError_eq(
+        pw_task_pool_submit(&pool, worker_stuck_until_signaled, &broadcast, &queued_completion),
+        AppError_NoError
+    ));
+
+    // The close itself times out on the stuck active tasks, but must drop the queued one at once
+    (void)pw_task_pool_close(&pool, PwTaskPoolClose_Abort, 0);
+    IHC_CHECK(AppError_eq(
+        pw_task_completion_wait(&queued_completion, 1, 0),
+        AppError_Interrupted
+    ));
+
+    IHC_ASSERT(ic_broadcast_signal_all(&broadcast) == IC_CONCURRENCY_OK);
+    IHC_ASSERT(AppError_eq(
+        pw_task_pool_close(&pool, PwTaskPoolClose_Abort, PW_TASK_COMPLETION_WAIT_FOREVER),
+        AppError_NoError
+    ));
     IHC_CHECK(AppError_eq(pw_task_pool_destroy(&pool), AppError_NoError));
     IHC_CHECK(ic_broadcast_destroy(&broadcast) == IC_CONCURRENCY_OK);
 }
@@ -1188,6 +1446,7 @@ typedef struct taskpool_stress_submit_ctx
     PwTaskPool* pool;
     ic_atomic_i32 submitted;
     ic_atomic_i32 completed;
+    ic_atomic_i32 unexpected_errors; // checked on the main thread after joining
 } taskpool_stress_submit_ctx;
 
 static void stress_increment_worker(void* arg)
@@ -1214,9 +1473,9 @@ static int stress_submitter_thread(void* arg)
         {
             ic_atomic_fetch_add(&ctx->submitted, 1);
         }
-        else
+        else if (!AppError_eq(err, AppError_OutOfBounds))
         {
-            IHC_CHECK(AppError_eq(err, AppError_OutOfBounds));
+            ic_atomic_fetch_add(&ctx->unexpected_errors, 1);
         }
     }
 
@@ -1237,6 +1496,7 @@ IHC_TEST(stress_task_pool_handles_high_contention_submissions)
     ctx.pool = &pool;
     ctx.submitted = ic_make_atomic(0);
     ctx.completed = ic_make_atomic(0);
+    ctx.unexpected_errors = ic_make_atomic(0);
 
     PwTask submitters[TASKPOOL_STRESS_THREADS];
 
@@ -1255,6 +1515,7 @@ IHC_TEST(stress_task_pool_handles_high_contention_submissions)
             AppError_NoError
         ));
     }
+    IHC_CHECK(ic_atomic_load(&ctx.unexpected_errors) == 0);
 
     IHC_ASSERT(AppError_eq(
         pw_task_pool_close(&pool, PwTaskPoolClose_Drain, TASK_TEST_WAIT_TIMEOUT),
@@ -1275,6 +1536,7 @@ typedef struct shutdown_race_ctx
     ic_atomic_i32 successful_submits;
     ic_atomic_i32 failed_submits;
     ic_atomic_i32 executed;
+    ic_atomic_i32 unexpected_errors; // checked on the main thread after joining
 } shutdown_race_ctx;
 
 static void shutdown_race_worker(void* arg)
@@ -1306,10 +1568,10 @@ static int shutdown_race_submitter(void* arg)
         else
         {
             // During shutdown or saturation these are valid
-            IHC_CHECK(
-                AppError_eq(err, AppError_OutOfBounds) ||
-                AppError_eq(err, AppError_InvalidState)
-            );
+            if (!AppError_eq(err, AppError_OutOfBounds) && !AppError_eq(err, AppError_InvalidState))
+            {
+                ic_atomic_fetch_add(&ctx->unexpected_errors, 1);
+            }
 
             ic_atomic_fetch_add(&ctx->failed_submits, 1);
         }
@@ -1333,6 +1595,7 @@ IHC_TEST(stress_task_pool_survives_shutdown_submission_races)
     ctx.successful_submits = ic_make_atomic(0);
     ctx.failed_submits = ic_make_atomic(0);
     ctx.executed = ic_make_atomic(0);
+    ctx.unexpected_errors = ic_make_atomic(0);
 
     PwTask submitters[4];
 
@@ -1358,6 +1621,7 @@ IHC_TEST(stress_task_pool_survives_shutdown_submission_races)
             AppError_NoError
         ));
     }
+    IHC_CHECK(ic_atomic_load(&ctx.unexpected_errors) == 0);
 
     const int32_t successful = ic_atomic_load(&ctx.successful_submits);
     const int32_t executed = ic_atomic_load(&ctx.executed);

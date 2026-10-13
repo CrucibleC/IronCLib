@@ -658,6 +658,8 @@ typedef struct PwTaskCompletion PwTaskCompletion;
 AppError pw_task_completion_wait(const PwTaskCompletion* const completion, const int32_t retry_period_ms, const int64_t timeout_ms);
 ```
 
+Timeouts use `PW_TASK_COMPLETION_WAIT_FOREVER` (`-1`) to wait forever, while `0` only checks once. Closing with `PwTaskPoolClose_Abort` drops queued tasks without running them, and anyone waiting on one of their completions gets `AppError_Interrupted` instead of waiting forever.
+
 > *Note: The only safe way to make an opaque struct containing concurrency objects is with forward declaration, heap memory allocation, and implementation in source file. If heap usage is of no concern then this is a good way to hide implementation details. Here however the prefix `PRIVATE_` is used so that if a user attempts to access the fields it will look like the wrong way to use the struct (which it is).*
 
 Tasks are submitted into the queue while holding the mutex:

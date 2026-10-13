@@ -126,6 +126,16 @@ IC_HEADER_FUNC int Status_eq(const Status a, const Status b) {
     return a.Status_value == b.Status_value;
 }
 
+// 1 for listed values, so values from files, network or other modules can be checked.
+// Being a switch over the list, a value used twice in the list is a compile error.
+IC_HEADER_FUNC int Status_is_valid(const Status v) {
+    switch (Status_get(v)) {
+        case 0: return 1;
+        case 1: return 1;
+        default: return 0;
+    }
+}
+
 IC_HEADER_FUNC const char* Status_to_string(const Status v) {
     switch (Status_get(v)) {
         case 0: return "Everything is fine";
@@ -296,6 +306,8 @@ It provides:
 
 Result types as created with `IC_RESULT_TYPE`. `IC_RESULT_IS_OK`, `IC_RESULT_VALUE`, and `IC_RESULT_ERROR` provide safe access to the result state and its data. The design avoids exceptions by making error handling explicit, while keeping the API ergonomic and easy to use. `IC_TRY_RETURN_ERR_AS` enables early-return error propagation when chaining operations.
 
+On compilers with `typeof` (GCC, Clang, C23, and MSVC since Visual Studio 2022 17.9), `IC_TRY_RETURN_ERR_AS` evaluates its result argument exactly once, so `IC_TRY_RETURN_ERR_AS(IntResult, parse(text))` is safe. On other compilers the fallback evaluates it twice when it is an error, so pass a variable there. `IC_TRY_SINGLE_EVALUATION` tells which version is in use.
+
 ### Why use this?
 It exists because C lacks built-in error handling, forcing either error codes or implicit control flow patterns that are easy to misuse. This abstraction makes it possible to represent success and failure explicitly as data while enabling controlled propagation of errors through function chains. This results in more predictable control flow and fewer ignored or hidden failure states.
 
@@ -377,7 +389,7 @@ It supports C99+ with fallbacks, while taking advantage of C11 features when ava
 
 >*Note: Alignment is not the easiest problem to manage and different compilers might handle exact usage differently (a portability limitation that must be accepted if using this). You can write your own macro to adjust for this.*
 
-`IC_MALLOC_ARRAY` catches negative arguments and integer overflow early and returns null. In the worst fallback `IC_ALIGNAS` expands to nothing and `IC_ALIGNOF` uses `offsetof`. `ic_byte` is just an `unsigned char` but it helps with code clarity.
+`IC_MALLOC_ARRAY` catches negative arguments and integer overflow early and returns null. In C11 and newer it evaluates its size argument exactly once (using `_Generic` on the size's integer type), so `IC_MALLOC_ARRAY(int, n++)` is safe, and a non-integer size is a compile error. In C99 the fallback evaluates the size more than once, so avoid side effects there. `IC_MALLOC_ARRAY_SINGLE_EVALUATION` tells which version is in use. In the worst fallback `IC_ALIGNAS` expands to nothing and `IC_ALIGNOF` measures the alignment with a helper struct. `ic_byte` is just an `unsigned char` but it helps with code clarity.
 
 ### Why use this?
 It exists because memory allocation and alignment handling in C are error-prone and inconsistent across compilers and standards. This abstraction makes it possible to safely allocate arrays without risking integer overflow and to write portable alignment-aware code. This results in fewer memory-related bugs, safer allocations, and improved cross-platform reliability.
@@ -533,8 +545,10 @@ typedef float f32;
 #define F32_DATA f32, IC_MOLD_FLOAT, -FLT_MAX, FLT_MAX
 
 // Expansion helper macros
+// IC_EXPAND (from ic_glue_macro.h, included by ic_num_cast.h) is required for MSVC's traditional
+// preprocessor, which would otherwise pass each expanded A and B on as a single argument
 #define DATA_PAIR_IMPL(X, a1,a2,a3,a4,b1,b2,b3,b4) X(a1,a2,a3,a4,b1,b2,b3,b4)
-#define DATA_PAIR(X, A, B) DATA_PAIR_IMPL(X, A, B)
+#define DATA_PAIR(X, A, B) IC_EXPAND(DATA_PAIR_IMPL(X, A, B))
 
 // Define all cast conversion functions in x list format
 // For i8, i16, i32, i64, u8, u16, u32, u64, f32, f64 
@@ -743,6 +757,15 @@ int perform_critical_work(void)
 In this example, the idea is for **a single thread** to perform the setup and cleanup each once, at the start and end of the program, respectively. After that the `perform_critical_work` function can be called as many times as desired for the duration of the program.
 
 > *Note: `ic_mutex` is non-recursive. Locking a non-recursive mutex twice from the same thread will deadlock in most underlying implementations.*
+
+`ic_mutex_lock` and `ic_mutex_unlock` return nothing, because they can only fail on a programming error (for example an uninitialized or destroyed mutex, or unlocking a mutex the thread does not own), and the caller cannot safely continue either way. Such a failure calls `IC_CONCURRENCY_LOCK_PANIC(msg)`, which defaults to `abort()`. Define it before including the header to log first or hook into your own crash handling, but it should not return. Windows SRW locks cannot fail, so it never fires there.
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#define IC_CONCURRENCY_LOCK_PANIC(msg) do { fprintf(stderr, "%s\n", msg); abort(); } while (0)
+#include "ironclib/ic_concurrency.h"
+```
 
 #### Sleep
 A simple sleep function. It makes no guarantee for exact of sleep, but it is portable and always takes an int32_t argument as milliseconds to ensure same behavior across platforms and check for less-than-zero.
@@ -966,6 +989,10 @@ This ensures consistent behavior across platforms while keeping the implementati
 - Do not lock mutex twice in same thread (will in practice almost always lead to deadlock).
 - Do not access UNSAFE_PRIVATE_ACCESS_* fields directly; they are internal and may change.
 - Do not call ic_task_join multiple times on the same task.
+- Do not forget to join or detach a task. Every successfully initialized task must be joined (`ic_task_join`) or detached (`ic_task_detach`) exactly once, otherwise the thread's resources leak.
+- Do not copy or move an `ic_task` after `ic_task_init`; the thread keeps a pointer to it.
+- Do not free a detached task while it is still running. It keeps writing its result and state into the `ic_task` until `ic_task_is_running` returns 0.
+- Do not define configuration tags (`IC_USE_C11_THREADS_AND_ATOMICS`, `IC_CONCURRENCY_NULLPTR_PANIC`, `IC_CONCURRENCY_LOCK_PANIC`, `IC_INCLUDE_FULL_WINDOWS_H`) after the first IronCLib include, or differently between source files. Set them for the whole build. Changing `IC_USE_C11_THREADS_AND_ATOMICS` mid-file is a compile error, but differences between source files cannot be detected.
 - Do not use atomics as a replacement for mutexes when coordinating complex shared state.
 - Do not ignore return codes from initialization and threading functions.
 - Do not assume thread scheduling or execution order; always design for concurrency correctness.
@@ -1112,6 +1139,12 @@ This creates a deterministic cooperative scheduling model without preemption or 
 - Do not rely on exact scheduling order unless you control all priorities and weights.
 - Do not use long-running steps; jobs are intended to be small and incremental.
 - Do not modify job state externally while it is being scheduled unless explicitly designed for it.
+- Do not let a job or its data go out of scope while it is scheduled. The scheduler stores a pointer to the job, not a copy, so the job (and its data) must outlive the scheduling, e.g. by being static or living in the same scope as the scheduler.
+- Do not add steps to a job while it is scheduled.
+- Do not expect `IC_MAKE_CO_JOB` to take more than 10 steps, even if `IC_CO_MAX_STEPS` is raised. Build larger jobs with `ic_make_co_job` and `ic_co_job_add_step`.
+- Do not use a weight above `IC_CO_MAX_STEPS` or a negative priority. `ic_co_scheduler_add_job` rejects them (through `IC_CO_BAD_CALL_CAPTURE`) and the job is not added.
+
+`ic_co_scheduler_is_done` reports true right after the tick that runs the last remaining step, so a `while (!ic_co_scheduler_is_done(&s)) { ic_co_scheduler_tick(&s); }` loop does no extra empty tick.
 
 ### Why this design?
 `ic_co_job` consists of multiple `ic_co_step` functions using the signature `void step_func(void* data)`. Other coroutine-style designs were considered, such as a single linear function using a signature such as `void step_func(int step, void* data, int* is_done)` or a dynamic state-machine approach using something such as `void step_func(void* data, step_func* next_step)`. These are valid designs with their own benefits, but IronCLib prioritizes safety and predictability over flexibility.

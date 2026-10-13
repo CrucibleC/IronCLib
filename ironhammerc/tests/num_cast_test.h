@@ -297,4 +297,77 @@ IHC_TEST(verify_floating_to_integer_assert_policy_rejects_out_of_range)
 }
 IC_ENABLE_WARNINGS
 
+// Custom target ranges narrower than the type, so both bounds must be honoured
+typedef uint32_t ranged_u32;     // [10, 100]
+typedef int32_t  ranged_i32;     // [-50, 50]
+typedef int32_t  ranged_pos_i32; // [10, 20], entirely above zero
+typedef int32_t  ranged_neg_i32; // [-20, -10], entirely below zero
+typedef double   ranged_f64;     // [2.0, 4.0]
+
+#define RANGED_U32_DATA     ranged_u32,     IC_MOLD_UNSIGNED_INT, 10u, 100u
+#define RANGED_I32_DATA     ranged_i32,     IC_MOLD_SIGNED_INT,   -50, 50
+#define RANGED_POS_I32_DATA ranged_pos_i32, IC_MOLD_SIGNED_INT,   10,  20
+#define RANGED_NEG_I32_DATA ranged_neg_i32, IC_MOLD_SIGNED_INT,   -20, -10
+#define RANGED_F64_DATA     ranged_f64,     IC_MOLD_FLOAT,        2.0, 4.0
+
+#define RANGED_CAST_CONVERSION_MATRIX(X)          \
+    DATA_PAIR(X, U32_DATA, RANGED_U32_DATA)       \
+    DATA_PAIR(X, I32_DATA, RANGED_U32_DATA)       \
+    DATA_PAIR(X, F64_DATA, RANGED_U32_DATA)       \
+    DATA_PAIR(X, U32_DATA, RANGED_I32_DATA)       \
+    DATA_PAIR(X, F64_DATA, RANGED_I32_DATA)       \
+    DATA_PAIR(X, U32_DATA, RANGED_POS_I32_DATA)   \
+    DATA_PAIR(X, U32_DATA, RANGED_NEG_I32_DATA)   \
+    DATA_PAIR(X, U32_DATA, RANGED_F64_DATA)
+
+IC_CASTING_FUNCTIONS(RANGED_CAST_CONVERSION_MATRIX)
+
+IHC_TEST(verify_integer_casts_clamp_to_custom_ranges)
+{
+    // unsigned -> unsigned
+    IHC_CHECK(cast_u32_to_ranged_u32(5u) == 10u);
+    IHC_CHECK(cast_u32_to_ranged_u32(50u) == 50u);
+    IHC_CHECK(cast_u32_to_ranged_u32(500u) == 100u);
+
+    // signed -> unsigned
+    IHC_CHECK(cast_i32_to_ranged_u32(-5) == 10u);
+    IHC_CHECK(cast_i32_to_ranged_u32(5) == 10u);
+    IHC_CHECK(cast_i32_to_ranged_u32(50) == 50u);
+    IHC_CHECK(cast_i32_to_ranged_u32(500) == 100u);
+
+    // unsigned -> signed
+    IHC_CHECK(cast_u32_to_ranged_i32(0u) == 0);
+    IHC_CHECK(cast_u32_to_ranged_i32(100u) == 50);
+    IHC_CHECK(cast_u32_to_ranged_pos_i32(5u) == 10);
+    IHC_CHECK(cast_u32_to_ranged_pos_i32(15u) == 15);
+    IHC_CHECK(cast_u32_to_ranged_pos_i32(UINT32_MAX) == 20);
+    IHC_CHECK(cast_u32_to_ranged_neg_i32(0u) == -10);
+    IHC_CHECK(cast_u32_to_ranged_neg_i32(UINT32_MAX) == -10);
+
+    // unsigned -> float
+    IHC_CHECK(cast_u32_to_ranged_f64(0u) == 2.0);
+    IHC_CHECK(cast_u32_to_ranged_f64(3u) == 3.0);
+    IHC_CHECK(cast_u32_to_ranged_f64(9u) == 4.0);
+}
+
+IHC_TEST(verify_floating_casts_clamp_to_custom_ranges)
+{
+    // float -> unsigned: values below lo but above zero must clamp to lo, not hi
+    IHC_CHECK(cast_f64_to_ranged_u32(5.0) == 10u);
+    IHC_CHECK(cast_f64_to_ranged_u32(9.5) == 10u);
+    IHC_CHECK(cast_f64_to_ranged_u32(50.7) == 50u);
+    IHC_CHECK(cast_f64_to_ranged_u32(100.5) == 100u);
+    IHC_CHECK(cast_f64_to_ranged_u32(1e30) == 100u);
+    IHC_CHECK(cast_f64_to_ranged_u32(-1e30) == 10u);
+    IHC_CHECK(cast_f64_to_ranged_u32(NAN) == 10u);
+
+    // float -> signed
+    IHC_CHECK(cast_f64_to_ranged_i32(-50.5) == -50);
+    IHC_CHECK(cast_f64_to_ranged_i32(-1e30) == -50);
+    IHC_CHECK(cast_f64_to_ranged_i32(49.9) == 49);
+    IHC_CHECK(cast_f64_to_ranged_i32(50.5) == 50);
+    IHC_CHECK(cast_f64_to_ranged_i32(1e30) == 50);
+    IHC_CHECK(cast_f64_to_ranged_i32(NAN) == -50);
+}
+
 #endif // IRON_HAMMER_C_TESTS_NUM_CAST_TEST_H
