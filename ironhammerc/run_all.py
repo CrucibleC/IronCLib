@@ -159,6 +159,16 @@ elif IS_MACOS:
 else:
     extra_tests = [("clang", "c11", "-O2", "c11threads", C11_THREADS)]
 
+# ThreadSanitizer tracks threads by intercepting pthread_create, but glibc's C11 thrd_create starts
+# threads without going through it. TSan then crashes inside its own runtime on the first access
+# from such a thread ("SEGV on unknown address", "nested bug in the same thread"), which says nothing
+# about IronCLib. The pthread backend, used by every other configuration, is fully covered by TSan.
+if "thread" in SANITIZERS.split(","):
+    for name, std, opt, tag, defines in extra_tests:
+        if tag == "c11threads":
+            print(f"{name} {tag} skipped (ThreadSanitizer does not support C11 thrd_create threads)")
+    extra_tests = [entry for entry in extra_tests if entry[3] != "c11threads"]
+
 
 # -----------------------------
 # Helpers
