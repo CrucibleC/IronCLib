@@ -14,6 +14,10 @@
  * limitations under the License.
  */
 
+// Included before the include guard on purpose, so the backend's configuration check
+// (IC_USE_C11_THREADS_AND_ATOMICS must not change within a translation unit) runs on every include.
+#include "ic_concurrency_backend.h"
+
 #ifndef IC_CONCURRENCY_SIGNAL_H
 #define IC_CONCURRENCY_SIGNAL_H
 
@@ -114,7 +118,6 @@ Description:
 ===============================================================================
 */
 
-#include "ic_concurrency_backend.h"
 #include "ic_concurrency.h"
 #include <stdint.h>
 

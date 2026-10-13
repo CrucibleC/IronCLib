@@ -225,7 +225,34 @@ IHC_TEST(verify_task_is_running_immediately_after_init)
     IHC_CHECK(result == 7);
 }
 
-typedef struct visibility_test_obj 
+IHC_TEST(verify_task_can_be_detached_once_and_not_joined)
+{
+    IHC_CHECK(ic_task_detach(NULL) == IC_CONCURRENCY_NULLREF);
+
+    ic_atomic_i32 release = ic_make_atomic(0);
+    ic_task task;
+    IHC_ASSERT(ic_task_init(&task, wait_for_release_thread, &release) == IC_CONCURRENCY_OK);
+
+    IHC_CHECK(ic_task_detach(&task) == IC_CONCURRENCY_OK);
+    IHC_CHECK(ic_task_detach(&task) == IC_CONCURRENCY_ALREADY_JOINED);
+    IHC_CHECK(ic_task_join(&task) == IC_CONCURRENCY_ALREADY_JOINED);
+
+    // A detached task still reports its state; the ic_task must stay valid until it stops running
+    ic_atomic_store(&release, 1);
+    int waited_ms = 0;
+    while (ic_task_is_running(&task) && waited_ms < 10000)
+    {
+        ic_thread_sleep(1);
+        waited_ms++;
+    }
+    IHC_ASSERT(ic_task_is_running(&task) == 0);
+
+    int result = -1;
+    IHC_CHECK(ic_task_get_result(&task, &result) == IC_CONCURRENCY_OK);
+    IHC_CHECK(result == 7);
+}
+
+typedef struct visibility_test_obj
 {
     ic_atomic_i32 flag;
     int data;

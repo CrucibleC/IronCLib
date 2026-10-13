@@ -975,6 +975,10 @@ This ensures consistent behavior across platforms while keeping the implementati
 - Do not lock mutex twice in same thread (will in practice almost always lead to deadlock).
 - Do not access UNSAFE_PRIVATE_ACCESS_* fields directly; they are internal and may change.
 - Do not call ic_task_join multiple times on the same task.
+- Do not forget to join or detach a task. Every successfully initialized task must be joined (`ic_task_join`) or detached (`ic_task_detach`) exactly once, otherwise the thread's resources leak.
+- Do not copy or move an `ic_task` after `ic_task_init`; the thread keeps a pointer to it.
+- Do not free a detached task while it is still running. It keeps writing its result and state into the `ic_task` until `ic_task_is_running` returns 0.
+- Do not define configuration tags (`IC_USE_C11_THREADS_AND_ATOMICS`, `IC_CONCURRENCY_NULLPTR_PANIC`, `IC_CONCURRENCY_LOCK_PANIC`, `IC_INCLUDE_FULL_WINDOWS_H`) after the first IronCLib include, or differently between source files. Set them for the whole build. Changing `IC_USE_C11_THREADS_AND_ATOMICS` mid-file is a compile error, but differences between source files cannot be detected.
 - Do not use atomics as a replacement for mutexes when coordinating complex shared state.
 - Do not ignore return codes from initialization and threading functions.
 - Do not assume thread scheduling or execution order; always design for concurrency correctness.

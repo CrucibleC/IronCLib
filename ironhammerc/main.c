@@ -10,6 +10,10 @@ do { \
 // Set to 1 to enable stress tests, which can be time-consuming; 0 to disable them for quicker runs
 #define RUN_STRESS_TESTS 0
 
+// IronCLib concurrency configuration must come before the first IronCLib include (see ic_concurrency.h).
+// The nullptr tests pass NULL on purpose, so the panic stays silent instead of logging each call.
+#define IC_CONCURRENCY_NULLPTR_PANIC(msg) ((void)(msg))
+
 // Verify the build really uses the C standard and optimization level it was configured for
 #if defined(IHC_EXPECTED_STDC_VERSION)
     #if !defined(__STDC_VERSION__) || (__STDC_VERSION__ != IHC_EXPECTED_STDC_VERSION)
@@ -107,6 +111,7 @@ int main(void) {
         IHC_TEST_ENTRY(verify_task_cannot_be_joined_twice),
         IHC_TEST_ENTRY(verify_get_result_fails_if_task_running),
         IHC_TEST_ENTRY(verify_task_is_running_immediately_after_init),
+        IHC_TEST_ENTRY(verify_task_can_be_detached_once_and_not_joined),
         IHC_TEST_ENTRY(verify_memory_visibility_with_atomics),
         IHC_TEST_ENTRY(verify_mutex_trylock_fails_under_contention),
         // ic_concurrency_signal.h

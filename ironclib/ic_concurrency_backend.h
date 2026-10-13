@@ -14,6 +14,17 @@
  * limitations under the License.
  */
 
+// Outside the include guard on purpose, so it runs on every include: a translation unit that changes
+// IC_USE_C11_THREADS_AND_ATOMICS after its first IronCLib concurrency include fails to compile, instead of
+// silently mixing backends. (Different values in different translation units cannot be detected here.)
+#if defined(IC_CONCURRENCY_BACKEND_H)
+    #if defined(IC_USE_C11_THREADS_AND_ATOMICS) && !defined(IC_THREAD_C11)
+        #error "IC_CONCURRENCY ERROR: IC_USE_C11_THREADS_AND_ATOMICS was defined after an IronCLib concurrency header was included. Define it before the first include, ideally for the whole build."
+    #elif !defined(IC_USE_C11_THREADS_AND_ATOMICS) && defined(IC_THREAD_C11)
+        #error "IC_CONCURRENCY ERROR: IC_USE_C11_THREADS_AND_ATOMICS was undefined after an IronCLib concurrency header was included. Keep it defined for the whole build."
+    #endif
+#endif
+
 #ifndef IC_CONCURRENCY_BACKEND_H
 #define IC_CONCURRENCY_BACKEND_H
 

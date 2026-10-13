@@ -17,6 +17,12 @@
 #ifndef PREMADE_PARALLEL_WORK_H
 #define PREMADE_PARALLEL_WORK_H
 
+// This header picks a logging IC_CONCURRENCY_NULLPTR_PANIC, which only works if no IronCLib concurrency
+// header has chosen the default (no-op) one yet. Fail loudly instead of silently ignoring it.
+#if defined(IC_INTERNAL_DEFAULT_NULLPTR_PANIC)
+    #error "parallel_work.h must be included before other IronCLib concurrency headers, or IC_CONCURRENCY_NULLPTR_PANIC must be defined before the first IronCLib include."
+#endif
+
 #ifndef IC_CONCURRENCY_NULLPTR_PANIC
 #include <stdio.h>
 #define IC_CONCURRENCY_NULLPTR_PANIC(msg) \
@@ -25,13 +31,17 @@
 
 // Set to 1 (e.g. -DPW_USE_C11_THREADING=1 for the whole build) to use C11 threads and atomics,
 // otherwise platform-specific backends (Win / pthreads) are used. It must be the same in every
-// translation unit, and is ignored if an IronCLib concurrency header was already included first.
+// translation unit, and it is a compile error to enable it after a non-C11 concurrency include.
 #ifndef PW_USE_C11_THREADING
 #define PW_USE_C11_THREADING 0
 #endif
 #if PW_USE_C11_THREADING && !defined(IC_USE_C11_THREADS_AND_ATOMICS)
     #define IC_USE_C11_THREADS_AND_ATOMICS
 #endif
+
+// Runs the backend's configuration check even if ic_concurrency.h was already included,
+// so PW_USE_C11_THREADING=1 after a non-C11 include is a compile error, not silently ignored
+#include "ironclib/ic_concurrency_backend.h"
 
 #include "ironclib/ic_inline.h"
 #include "ironclib/ic_concurrency.h"
@@ -73,6 +83,7 @@ IC_HEADER_FUNC AppError pw_task_init(PwTask* const out_task, const PwTaskFunctio
 IC_HEADER_FUNC bool pw_task_is_running(const PwTask* const task)                                                { return (bool)ic_task_is_running(task); }
 IC_HEADER_FUNC AppError pw_task_get_result(const PwTask* const task, int* const out_result)                     { return pw_concurrency_result_to_error(ic_task_get_result(task, out_result)); }
 IC_HEADER_FUNC AppError pw_task_join(PwTask* const task)                                                        { return pw_concurrency_result_to_error(ic_task_join(task)); }
+IC_HEADER_FUNC AppError pw_task_detach(PwTask* const task)                                                      { return pw_concurrency_result_to_error(ic_task_detach(task)); }
 
 // MUTEX API
 typedef ic_mutex PwMutex;
