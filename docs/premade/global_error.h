@@ -28,6 +28,12 @@ USAGE:
 #include "ironclib/ic_typenum.h"
 #include "ironclib/ic_inline.h"
 
+// C++ compatibility: C linkage for everything declared below. Placed after the #includes,
+// since system and other library headers must not be wrapped in an extern "C" block.
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // Define a global error type for the application.
 // Entries are kept in numeric order. Never renumber an existing error, since codes may be
 // stored or sent elsewhere: add new ones at the end with the next free value.
@@ -99,5 +105,9 @@ USAGE:
 
 // Generate a global error type with the provided list
 IC_TYPENUM_FULL(AppError, int, GLOBAL_ERROR_LIST)
+
+#ifdef __cplusplus
+} // extern "C"
+#endif
 
 #endif // PREMADE_GLOBAL_ERROR_H

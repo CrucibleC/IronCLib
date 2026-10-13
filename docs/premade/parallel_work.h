@@ -51,6 +51,12 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+// C++ compatibility: C linkage for everything declared below. Placed after the #includes,
+// since system and other library headers must not be wrapped in an extern "C" block.
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 IC_HEADER_FUNC AppError pw_concurrency_result_to_error(const int concurrency_result)
 {
     switch (concurrency_result)
@@ -198,7 +204,9 @@ typedef struct PwTaskPool
 // INTERNAL WORKER
 // ==============================================================================
 
-static int PRIVATE_pw_task_pool_worker_main(void* arg)
+// IC_HEADER_FUNC (static inline) like the rest of the header, so files that include it
+// without using the task pool get no unused-function warnings
+IC_HEADER_FUNC int PRIVATE_pw_task_pool_worker_main(void* arg)
 {
     PwTaskPool* p = (PwTaskPool*)arg;
 
@@ -634,12 +642,11 @@ IC_HEADER_FUNC AppError pw_task_pool_submit(PwTaskPool* const pool, const PwTask
         return AppError_OutOfBounds;
     }
 
-    pool->PRIVATE_jobs[pool->PRIVATE_tail] = (PwTaskPoolJob)
-    {
-        .PRIVATE_func = func,
-        .PRIVATE_arg = arg,
-        .PRIVATE_completion = out_completion
-    };
+    // Assigned field by field: compound literals and designated initializers are not C++ (before C++20)
+    PwTaskPoolJob* const job = &pool->PRIVATE_jobs[pool->PRIVATE_tail];
+    job->PRIVATE_func = func;
+    job->PRIVATE_arg = arg;
+    job->PRIVATE_completion = out_completion;
 
     pool->PRIVATE_tail = (pool->PRIVATE_tail + 1) % PW_TASKPOOL_MAX_PENDING_TASKS;
     pool->PRIVATE_count++;
@@ -696,5 +703,9 @@ IC_HEADER_FUNC AppError pw_task_pool_destroy(PwTaskPool* const pool)
     }
     return AppError_NoError;
 }
+
+#ifdef __cplusplus
+} // extern "C"
+#endif
 
 #endif // PREMADE_PARALLEL_WORK_H

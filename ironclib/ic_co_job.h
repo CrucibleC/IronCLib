@@ -20,6 +20,12 @@
 #include <stddef.h>
 #include "ic_inline.h"
 
+// C++ compatibility: C linkage for everything declared below. Placed after the #includes,
+// since system and other library headers must not be wrapped in an extern "C" block.
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*
 Compatibility:
     - C99+ supported
@@ -192,7 +198,10 @@ typedef struct ic_co_scheduler
 
 IC_HEADER_FUNC ic_co_job ic_make_co_job(void)
 {
-    return (ic_co_job){0};
+    // Every member is initialized explicitly (no compound literal, no {0}),
+    // so this is also valid C++ without missing-initializer warnings
+    const ic_co_job job = { { NULL }, 0 };
+    return job;
 }
 
 IC_HEADER_FUNC void ic_co_job_add_step(ic_co_job* const job, const ic_co_step step)
@@ -232,8 +241,17 @@ IC_HEADER_FUNC void ic_co_job_run(const ic_co_job* const job, void* const data)
 
 IC_HEADER_FUNC ic_co_scheduler ic_make_co_scheduler(void)
 {
-    ic_co_scheduler s = {0};
-    s.UNSAFE_PRIVATE_ACCESS_is_done = 1;
+    // Members in declaration order: jobs, job_count, runnable, runnable_count, total_credits, is_done.
+    // Spelled out (instead of {0}) so C++ does not warn about missing initializers;
+    // the remaining array elements are zero-initialized in both languages.
+    const ic_co_scheduler s = {
+        { { NULL, NULL, 0, 0, 0, 0 } },
+        0,
+        { NULL },
+        0,
+        0,
+        1
+    };
     return s;
 }
 
@@ -393,5 +411,9 @@ IC_HEADER_FUNC int ic_co_scheduler_credits(const ic_co_scheduler* const s)
     return s->UNSAFE_PRIVATE_ACCESS_total_credits;
 }
 
+
+#ifdef __cplusplus
+} // extern "C"
+#endif
 
 #endif // IC_CO_JOB_H

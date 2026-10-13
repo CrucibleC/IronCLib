@@ -129,11 +129,12 @@ if (MSVC)
 endif()
 
 # -----------------------------
-# C++ branches (compile-only)
+# C++ compatibility (compile-only)
 # -----------------------------
-# IC_STATIC_ASSERT, IC_ALIGNAS and IC_ALIGNOF have C++ branches that no C build selects. A C++ source
-# checks them with static asserts at compile time. It is an object library that is never linked,
-# so the test executable stays pure C. Skipped when no C++ compiler is available.
+# A C++11 source includes every library and premade header and uses their main macros, which checks
+# the extern "C" guards and C++-valid code, plus the C++-only branches (IC_STATIC_ASSERT, IC_ALIGNAS,
+# IC_ALIGNOF, decltype in IC_TRY_RETURN_ERR_AS) that no C build selects. It is an object library that is
+# never linked, so the test executable stays pure C. Skipped when no C++ compiler is available.
 include(CheckLanguage)
 check_language(CXX)
 if (CMAKE_CXX_COMPILER)
@@ -141,6 +142,9 @@ if (CMAKE_CXX_COMPILER)
 
     add_library(ihc_cpp_compat OBJECT tests/cpp_compat.cpp)
     target_include_directories(ihc_cpp_compat PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
+    if (NOT WIN32 AND NOT APPLE)
+        target_compile_definitions(ihc_cpp_compat PRIVATE _POSIX_C_SOURCE=200809L) # same reason as the C target
+    endif()
     set_target_properties(ihc_cpp_compat PROPERTIES
         CXX_STANDARD 11
         CXX_STANDARD_REQUIRED ON
@@ -150,7 +154,7 @@ if (CMAKE_CXX_COMPILER)
     if (CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         target_compile_options(ihc_cpp_compat PRIVATE ${OPT_LEVEL} -Wall -Wextra -Wpedantic -Werror)
     elseif (MSVC)
-        target_compile_options(ihc_cpp_compat PRIVATE ${_msvc_opt} /W4 /WX)
+        target_compile_options(ihc_cpp_compat PRIVATE ${_msvc_opt} /W4 /WX /wd4127) # same as the C target
     endif()
 
     # Building the test executable always builds (and so checks) the C++ source too

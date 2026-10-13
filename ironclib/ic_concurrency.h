@@ -152,6 +152,12 @@ IC_CONCURRENCY_ALREADY_LOCKED   4
     #define IC_CONCURRENCY_LOCK_PANIC(msg) abort()
 #endif
 
+// C++ compatibility: C linkage for everything declared below. Placed after the #includes,
+// since system and other library headers must not be wrapped in an extern "C" block.
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // ==============================================================================
 //  ERROR CODES
 // ==============================================================================
@@ -742,5 +748,9 @@ IC_HEADER_FUNC void ic_thread_sleep(const int32_t milliseconds)
 
 #endif
 }
+
+#ifdef __cplusplus
+} // extern "C"
+#endif
 
 #endif // IC_CONCURRENCY_H

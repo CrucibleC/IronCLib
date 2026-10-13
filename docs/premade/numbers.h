@@ -43,6 +43,12 @@ MUTALLY EXCLUSIVE CAST SUPPORT FOR:
 #include <float.h>
 #include <limits.h>
 
+// C++ compatibility: C linkage for everything declared below. Placed after the #includes,
+// since system and other library headers must not be wrapped in an extern "C" block.
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // Create typedefs for shorter function names and DATA macros for easier writing of matrix
 // signed integers
 typedef int8_t   i8;
@@ -230,5 +236,9 @@ typedef unsigned int unsigned_int;
 
 // Generate casting functions
 IC_CASTING_FUNCTIONS(STANDARD_CAST_CONVERSION_MATRIX)
+
+#ifdef __cplusplus
+} // extern "C"
+#endif
 
 #endif // PREMADE_NUMBERS_H

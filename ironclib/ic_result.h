@@ -123,11 +123,11 @@ This macro generates:
 
 Implementations:
 - Compilers with typeof (C23 typeof, GCC / Clang __typeof__ in every mode, MSVC __typeof__
-  in C mode since Visual Studio 2022 17.9):
+  in C mode since Visual Studio 2022 17.9, and decltype in C++11):
     result is evaluated exactly once into a temporary, so passing a function call is safe,
     e.g. IC_TRY_RETURN_ERR_AS(IntResult, parse(text));
     The temporary is named ic_inner_try_result, so result must not refer to a variable of that name.
-- Fallback (other compilers, older MSVC, and C++):
+- Fallback (other compilers, older MSVC, and C++ before C++11):
     result is evaluated once when it is ok, but TWICE when it is an error, so pass a variable,
     not a function call or anything with side effects.
 IC_TRY_SINGLE_EVALUATION is 1 for the typeof version and 0 for the fallback.
@@ -141,6 +141,10 @@ IC_TRY_SINGLE_EVALUATION is 1 for the typeof version and 0 for the fallback.
     #define IC_INNER_TYPEOF(x) __typeof__(x) // accepted in strict ISO modes, unlike plain typeof
 #elif !defined(__cplusplus) && defined(_MSC_VER) && _MSC_VER >= 1939
     #define IC_INNER_TYPEOF(x) __typeof__(x)
+#elif defined(__cplusplus) && (__cplusplus >= 201103L || (defined(_MSC_VER) && _MSC_VER >= 1600))
+    // decltype of an lvalue expression is a reference, which binds to it without a copy:
+    // still exactly one evaluation. (MSVC reports __cplusplus as 199711L by default.)
+    #define IC_INNER_TYPEOF(x) decltype(x)
 #endif
 
 #if defined(IC_INNER_TYPEOF)

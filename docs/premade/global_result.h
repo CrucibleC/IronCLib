@@ -21,6 +21,12 @@
 #include "global_error.h"
 #include <stddef.h>
 #include <stdbool.h>
+
+// C++ compatibility: C linkage for everything declared below. Placed after the #includes,
+// since system and other library headers must not be wrapped in an extern "C" block.
+#ifdef __cplusplus
+extern "C" {
+#endif
 // #include "numbers.h" // Uncomment if you want to use the predefined number types in your result values
 
 /*
@@ -75,7 +81,16 @@ IC_RESULT_TYPE(BoolResult, bool, AppError)
 typedef struct { char _; } VoidType;
 GLOBAL_RESULT_TYPE(VoidType)
 typedef VoidTypeResult VoidResult;
-#define VoidResult_ok() VoidTypeResult_ok((VoidType){0})
+
+// A function instead of a compound literal ((VoidType){0}), which is not valid C++
+IC_HEADER_FUNC VoidType VoidType_make(void)
+{
+    VoidType v;
+    v._ = 0;
+    return v;
+}
+
+#define VoidResult_ok() VoidTypeResult_ok(VoidType_make())
 #define VoidResult_err(x) VoidTypeResult_err(x)
 
 // If numbers.h is included, number result types are also generated
@@ -90,6 +105,10 @@ IC_RESULT_TYPE(U32Result, u32, AppError)
 IC_RESULT_TYPE(U64Result, u64, AppError)
 IC_RESULT_TYPE(F32Result, f32, AppError)
 IC_RESULT_TYPE(F64Result, f64, AppError)
+#endif
+
+#ifdef __cplusplus
+} // extern "C"
 #endif
 
 #endif // PREMADE_GLOBAL_RESULT_H

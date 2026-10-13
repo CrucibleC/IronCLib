@@ -123,6 +123,12 @@ Description:
 #include "ic_concurrency.h"
 #include <stdint.h>
 
+// C++ compatibility: C linkage for everything declared below. Placed after the #includes,
+// since system and other library headers must not be wrapped in an extern "C" block.
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // ==============================================================================
 //  CONDITION VARIABLE
 // ==============================================================================
@@ -513,5 +519,9 @@ IC_HEADER_FUNC int ic_broadcast_destroy(ic_broadcast* const b)
     const int r2 = ic_mutex_destroy(&b->UNSAFE_PRIVATE_ACCESS_MUTEX);
     return (r1 == IC_CONCURRENCY_OK && r2 == IC_CONCURRENCY_OK) ? IC_CONCURRENCY_OK : IC_CONCURRENCY_FAILURE;
 }
+
+#ifdef __cplusplus
+} // extern "C"
+#endif
 
 #endif // IC_CONCURRENCY_SIGNAL_H

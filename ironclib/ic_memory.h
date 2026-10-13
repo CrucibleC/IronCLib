@@ -41,6 +41,12 @@ Provides:
 #include <limits.h> // ULLONG_MAX
 #include "ic_inline.h"
 
+// C++ compatibility: C linkage for everything declared below. Placed after the #includes,
+// since system and other library headers must not be wrapped in an extern "C" block.
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 
 /*
 -------------------------------------------------------------------------------
@@ -211,5 +217,9 @@ Example:
 
 #endif
 
+
+#ifdef __cplusplus
+} // extern "C"
+#endif
 
 #endif // IC_MEMORY_H
