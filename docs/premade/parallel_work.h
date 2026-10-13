@@ -206,7 +206,11 @@ static int PRIVATE_pw_task_pool_worker_main(void* arg)
     {
         if (!AppError_eq(pw_gate_wait(&p->PRIVATE_work_gate), AppError_NoError))
         {
-            continue;
+            // A failed wait returns immediately, so retrying it at once would spin a core at 100%.
+            // Back off briefly and fall through to the normal checks below instead of retrying:
+            // they handle an empty queue and both close modes, so a worker whose gate keeps failing
+            // degrades to polling every millisecond, and can still run jobs and exit on close.
+            pw_thread_sleep_milliseconds(1);
         }
 
         pw_mutex_lock(&p->PRIVATE_mutex);

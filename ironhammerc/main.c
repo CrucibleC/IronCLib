@@ -67,6 +67,8 @@ int main(void) {
         IHC_TEST_ENTRY(verify_memory_protects_against_zero_size),
         IHC_TEST_ENTRY(verify_memory_protects_against_overflow),
         IHC_TEST_ENTRY(verify_memory_allocates_valid_array),
+        IHC_TEST_ENTRY(verify_memory_handles_every_integer_size_type),
+        IHC_TEST_ENTRY(verify_memory_evaluates_size_once_when_supported),
         // ic_bounded_loop.h
         IHC_TEST_ENTRY(verify_bounded_while_prevents_infinite_loops),
         IHC_TEST_ENTRY(verify_bounded_while_works_as_normal_within_bounds),
@@ -78,6 +80,7 @@ int main(void) {
         IHC_TEST_ENTRY(verify_typenum_internal_values_are_correct),
         IHC_TEST_ENTRY(verify_typenum_equality_function_works),
         IHC_TEST_ENTRY(verify_typenum_provides_correct_strings),
+        IHC_TEST_ENTRY(verify_typenum_validates_values_from_outside),
         // ic_num_cast.h
         IHC_TEST_ENTRY(verify_simple_same_bit_cast_gives_expected_value),
         IHC_TEST_ENTRY(verify_floating_to_unsigned_stays_within_bounds),
@@ -101,6 +104,7 @@ int main(void) {
         IHC_TEST_ENTRY(verify_ok_and_err_functions_work_for_typenum_error),
         IHC_TEST_ENTRY(verify_optional_accessor_macros_work),
         IHC_TEST_ENTRY(verify_try_macro_propagates_error_in_same_error_type_context),
+        IHC_TEST_ENTRY(verify_try_macro_evaluates_result_once_when_supported),
         // ic_concurrency.h
         IHC_TEST_ENTRY(verify_atomic_int_can_get_and_set_values_correctly),
         IHC_TEST_ENTRY(verify_atomic_does_not_crash_when_given_nullptr),
@@ -125,6 +129,7 @@ int main(void) {
         IHC_TEST_ENTRY(verify_gate_nullptr_safety),
         IHC_TEST_ENTRY(verify_gate_releases_exactly_one_thread_per_signal),
         IHC_TEST_ENTRY(verify_gate_is_lossless),
+        IHC_TEST_ENTRY(verify_gate_rejects_signals_when_permits_are_full),
         IHC_TEST_ENTRY(verify_broadcast_nullptr_safety),
         IHC_TEST_ENTRY(verify_broadcast_wakes_all_waiters),
         IHC_TEST_ENTRY(verify_broadcast_is_sticky_until_reset),

@@ -250,6 +250,27 @@ IHC_TEST(verify_gate_is_lossless)
     ic_mutex_destroy(&data.mutex);
 }
 
+IHC_TEST(verify_gate_rejects_signals_when_permits_are_full)
+{
+    ic_gate gate;
+    IHC_ASSERT(ic_gate_init(&gate) == IC_CONCURRENCY_OK);
+
+    // Reaching the limit with real signals would take billions of calls, so start just below it
+    gate.UNSAFE_PRIVATE_ACCESS_PERMITS = UINT32_MAX - 1;
+
+    IHC_CHECK(ic_gate_signal_one(&gate) == IC_CONCURRENCY_OK);
+    IHC_CHECK(gate.UNSAFE_PRIVATE_ACCESS_PERMITS == UINT32_MAX);
+    IHC_CHECK(ic_gate_signal_one(&gate) == IC_CONCURRENCY_FAILURE);
+    IHC_CHECK(gate.UNSAFE_PRIVATE_ACCESS_PERMITS == UINT32_MAX); // not wrapped to 0
+
+    // Consuming a permit makes room for exactly one more signal
+    IHC_CHECK(ic_gate_wait(&gate) == IC_CONCURRENCY_OK);
+    IHC_CHECK(ic_gate_signal_one(&gate) == IC_CONCURRENCY_OK);
+    IHC_CHECK(ic_gate_signal_one(&gate) == IC_CONCURRENCY_FAILURE);
+
+    IHC_CHECK(ic_gate_destroy(&gate) == IC_CONCURRENCY_OK);
+}
+
 // ==============================================================================
 // BROADCAST TESTS
 // ==============================================================================

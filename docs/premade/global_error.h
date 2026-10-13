@@ -28,7 +28,9 @@ USAGE:
 #include "ironclib/ic_typenum.h"
 #include "ironclib/ic_inline.h"
 
-// Define a global error type for the application
+// Define a global error type for the application.
+// Entries are kept in numeric order. Never renumber an existing error, since codes may be
+// stored or sent elsewhere: add new ones at the end with the next free value.
 #define GLOBAL_ERROR_LIST(X, Type) \
     /* Core / success */ \
     X(Type, NoError, 0, "Everything is fine") \
@@ -42,22 +44,21 @@ USAGE:
     X(Type, NullRef, 4, "Illegal null pointer was provided") \
     X(Type, OutOfBounds, 5, "Index or range out of bounds") \
     \
-    /* System / OS permissions & resources */ \
+    /* System / OS permissions */ \
     X(Type, Permission, 6, "Failure due to lacking permissions") \
-    X(Type, AccessDenied, 11, "Access to resource denied by OS") \
     \
     /* Memory */ \
     X(Type, BadAlloc, 7, "Failed to allocate memory") \
     \
-    /* I/O and filesystem */ \
+    /* I/O, filesystem and OS resources */ \
     X(Type, IoError, 8, "Input/output operation failed") \
     X(Type, FileNotFound, 9, "Requested file does not exist") \
     X(Type, FileExists, 10, "File already exists") \
+    X(Type, AccessDenied, 11, "Access to resource denied by OS") \
     X(Type, DiskFull, 12, "No space left on device") \
     \
-    /* Execution / runtime state */ \
+    /* Execution */ \
     X(Type, Interrupted, 13, "Operation was interrupted") \
-    X(Type, Timeout, 20, "Operation timed out") \
     \
     /* State / lifecycle errors */ \
     X(Type, InvalidState, 14, "Operation not valid in current state") \
@@ -66,6 +67,9 @@ USAGE:
     X(Type, NotFound, 17, "Requested resource was not found") \
     X(Type, AlreadyExists, 18, "Resource already exists") \
     X(Type, Unsupported, 19, "Operation is not supported") \
+    \
+    /* Timing */ \
+    X(Type, Timeout, 20, "Operation timed out") \
     \
     /* Data / parsing / integrity */ \
     X(Type, ParseError, 21, "Failed to parse input") \

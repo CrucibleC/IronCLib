@@ -85,6 +85,8 @@ Behavior:
 - Each call to ic_gate_signal_one releases exactly one waiting thread.
 - If no thread is waiting, the signal is stored as a permit.
 - Each permit is consumed by exactly one waiter.
+- At most UINT32_MAX permits can be stored; a signal beyond that returns IC_CONCURRENCY_FAILURE
+  and stores nothing.
 
 Description:
     Auto-reset synchronization primitive.
@@ -359,6 +361,13 @@ IC_HEADER_FUNC int ic_gate_signal_one(ic_gate* const g)
     }
 
     ic_mutex_lock(&g->UNSAFE_PRIVATE_ACCESS_MUTEX);
+
+    // Wrapping back to 0 would silently lose every stored permit, so a full gate rejects the signal
+    if (g->UNSAFE_PRIVATE_ACCESS_PERMITS == UINT32_MAX)
+    {
+        ic_mutex_unlock(&g->UNSAFE_PRIVATE_ACCESS_MUTEX);
+        return IC_CONCURRENCY_FAILURE;
+    }
 
     g->UNSAFE_PRIVATE_ACCESS_PERMITS++;
 

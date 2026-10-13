@@ -120,17 +120,54 @@ This macro generates:
 
 - early return on error
 - zero runtime overhead in optimized builds
-- result is evaluated more than once, so pass a variable, not a function call
+
+Implementations:
+- Compilers with typeof (C23 typeof, GCC / Clang __typeof__ in every mode, MSVC __typeof__
+  in C mode since Visual Studio 2022 17.9):
+    result is evaluated exactly once into a temporary, so passing a function call is safe,
+    e.g. IC_TRY_RETURN_ERR_AS(IntResult, parse(text));
+    The temporary is named ic_inner_try_result, so result must not refer to a variable of that name.
+- Fallback (other compilers, older MSVC, and C++):
+    result is evaluated once when it is ok, but TWICE when it is an error, so pass a variable,
+    not a function call or anything with side effects.
+IC_TRY_SINGLE_EVALUATION is 1 for the typeof version and 0 for the fallback.
 
 ==============================================================================
 */
 
-#define IC_TRY_RETURN_ERR_AS(return_type, result) \
-    do { \
-        if (!(result).ok) { \
-            return return_type##_err((result).data.error); \
-        } \
-    } while (0)
+#if !defined(__cplusplus) && defined(__STDC_VERSION__) && __STDC_VERSION__ >= 202311L
+    #define IC_INNER_TYPEOF(x) typeof(x)
+#elif !defined(__cplusplus) && (defined(__GNUC__) || defined(__clang__))
+    #define IC_INNER_TYPEOF(x) __typeof__(x) // accepted in strict ISO modes, unlike plain typeof
+#elif !defined(__cplusplus) && defined(_MSC_VER) && _MSC_VER >= 1939
+    #define IC_INNER_TYPEOF(x) __typeof__(x)
+#endif
+
+#if defined(IC_INNER_TYPEOF)
+
+    #define IC_TRY_SINGLE_EVALUATION 1
+
+    #define IC_TRY_RETURN_ERR_AS(return_type, result) \
+        do { \
+            IC_INNER_TYPEOF(result) ic_inner_try_result = (result); \
+            if (!ic_inner_try_result.ok) { \
+                return return_type##_err(ic_inner_try_result.data.error); \
+            } \
+        } while (0)
+
+#else
+
+    #define IC_TRY_SINGLE_EVALUATION 0
+
+    // Fallback: evaluates result twice on the error path (see the documentation above)
+    #define IC_TRY_RETURN_ERR_AS(return_type, result) \
+        do { \
+            if (!(result).ok) { \
+                return return_type##_err((result).data.error); \
+            } \
+        } while (0)
+
+#endif
 
 
 #endif // IC_RESULT_H

@@ -126,6 +126,16 @@ IC_HEADER_FUNC int Status_eq(const Status a, const Status b) {
     return a.Status_value == b.Status_value;
 }
 
+// 1 for listed values, so values from files, network or other modules can be checked.
+// Being a switch over the list, a value used twice in the list is a compile error.
+IC_HEADER_FUNC int Status_is_valid(const Status v) {
+    switch (Status_get(v)) {
+        case 0: return 1;
+        case 1: return 1;
+        default: return 0;
+    }
+}
+
 IC_HEADER_FUNC const char* Status_to_string(const Status v) {
     switch (Status_get(v)) {
         case 0: return "Everything is fine";
@@ -296,6 +306,8 @@ It provides:
 
 Result types as created with `IC_RESULT_TYPE`. `IC_RESULT_IS_OK`, `IC_RESULT_VALUE`, and `IC_RESULT_ERROR` provide safe access to the result state and its data. The design avoids exceptions by making error handling explicit, while keeping the API ergonomic and easy to use. `IC_TRY_RETURN_ERR_AS` enables early-return error propagation when chaining operations.
 
+On compilers with `typeof` (GCC, Clang, C23, and MSVC since Visual Studio 2022 17.9), `IC_TRY_RETURN_ERR_AS` evaluates its result argument exactly once, so `IC_TRY_RETURN_ERR_AS(IntResult, parse(text))` is safe. On other compilers the fallback evaluates it twice when it is an error, so pass a variable there. `IC_TRY_SINGLE_EVALUATION` tells which version is in use.
+
 ### Why use this?
 It exists because C lacks built-in error handling, forcing either error codes or implicit control flow patterns that are easy to misuse. This abstraction makes it possible to represent success and failure explicitly as data while enabling controlled propagation of errors through function chains. This results in more predictable control flow and fewer ignored or hidden failure states.
 
@@ -377,7 +389,7 @@ It supports C99+ with fallbacks, while taking advantage of C11 features when ava
 
 >*Note: Alignment is not the easiest problem to manage and different compilers might handle exact usage differently (a portability limitation that must be accepted if using this). You can write your own macro to adjust for this.*
 
-`IC_MALLOC_ARRAY` catches negative arguments and integer overflow early and returns null. In the worst fallback `IC_ALIGNAS` expands to nothing and `IC_ALIGNOF` uses `offsetof`. `ic_byte` is just an `unsigned char` but it helps with code clarity.
+`IC_MALLOC_ARRAY` catches negative arguments and integer overflow early and returns null. In C11 and newer it evaluates its size argument exactly once (using `_Generic` on the size's integer type), so `IC_MALLOC_ARRAY(int, n++)` is safe, and a non-integer size is a compile error. In C99 the fallback evaluates the size more than once, so avoid side effects there. `IC_MALLOC_ARRAY_SINGLE_EVALUATION` tells which version is in use. In the worst fallback `IC_ALIGNAS` expands to nothing and `IC_ALIGNOF` measures the alignment with a helper struct. `ic_byte` is just an `unsigned char` but it helps with code clarity.
 
 ### Why use this?
 It exists because memory allocation and alignment handling in C are error-prone and inconsistent across compilers and standards. This abstraction makes it possible to safely allocate arrays without risking integer overflow and to write portable alignment-aware code. This results in fewer memory-related bugs, safer allocations, and improved cross-platform reliability.

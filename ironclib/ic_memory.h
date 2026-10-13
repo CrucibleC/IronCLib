@@ -37,6 +37,8 @@ Provides:
 
 #include <stdlib.h>
 #include <stddef.h>
+#include <stdint.h> // SIZE_MAX
+#include <limits.h> // ULLONG_MAX
 #include "ic_inline.h"
 
 
@@ -128,6 +130,28 @@ IC_HEADER_FUNC void* ic_inner_malloc_array_impl(const size_t count, const size_t
     return malloc(count * elem_size);
 }
 
+// Typed entry points for the C11 IC_MALLOC_ARRAY: every integer type is converted to the widest
+// type of the same signedness, so no value changes, and a count that does not fit size_t is rejected.
+IC_HEADER_FUNC void* ic_inner_malloc_array_unsigned(const unsigned long long count, const size_t elem_size)
+{
+#if SIZE_MAX < ULLONG_MAX
+    if (count > (unsigned long long)SIZE_MAX) {
+        return NULL;
+    }
+#endif
+
+    return ic_inner_malloc_array_impl((size_t)count, elem_size);
+}
+
+IC_HEADER_FUNC void* ic_inner_malloc_array_signed(const long long count, const size_t elem_size)
+{
+    if (count <= 0) {
+        return NULL;
+    }
+
+    return ic_inner_malloc_array_unsigned((unsigned long long)count, elem_size);
+}
+
 
 /*
 ===============================================================================
@@ -138,20 +162,54 @@ Purpose:
 - Handles negative inputs safely
 - Prevents overflow in multiplication
 
-Notes:
-- Macro is responsible for sanitizing signed input
-- Function assumes valid size_t inputs only
-- size is evaluated more than once, so avoid side effects (e.g. n++)
+Implementations:
+- C11 and newer (GCC, Clang, MSVC /std:c11 and any other C11 compiler):
+    size is evaluated exactly once, so side effects such as n++ are safe.
+    _Generic picks a helper by the integer type of size (the controlling expression of
+    _Generic is never evaluated), and size is then evaluated once as the call argument.
+    size must have an integer type: anything else (e.g. a float) is a compile error.
+- Fallback (C99, and C++ where _Generic does not exist):
+    size is evaluated MORE THAN ONCE, so avoid side effects (e.g. n++).
+    Any arithmetic type is accepted and converted to size_t after the negative check.
+IC_MALLOC_ARRAY_SINGLE_EVALUATION is 1 for the C11 version and 0 for the fallback.
 
 Example:
     int *arr = IC_MALLOC_ARRAY(int, n);
 ===============================================================================
 */
 
-#define IC_MALLOC_ARRAY(type, size) \
-    ((type *)ic_inner_malloc_array_impl( \
-        ((size) <= 0) ? 0u : (size_t)(size), \
-        sizeof(type)))
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+
+    #define IC_MALLOC_ARRAY_SINGLE_EVALUATION 1
+
+    // Plain char may be signed or unsigned; the signed helper handles both ranges correctly
+    #define IC_MALLOC_ARRAY(type, size) \
+        ((type *)_Generic((size), \
+            char:               ic_inner_malloc_array_signed, \
+            signed char:        ic_inner_malloc_array_signed, \
+            short:              ic_inner_malloc_array_signed, \
+            int:                ic_inner_malloc_array_signed, \
+            long:               ic_inner_malloc_array_signed, \
+            long long:          ic_inner_malloc_array_signed, \
+            _Bool:              ic_inner_malloc_array_unsigned, \
+            unsigned char:      ic_inner_malloc_array_unsigned, \
+            unsigned short:     ic_inner_malloc_array_unsigned, \
+            unsigned int:       ic_inner_malloc_array_unsigned, \
+            unsigned long:      ic_inner_malloc_array_unsigned, \
+            unsigned long long: ic_inner_malloc_array_unsigned \
+        )((size), sizeof(type)))
+
+#else
+
+    #define IC_MALLOC_ARRAY_SINGLE_EVALUATION 0
+
+    // Fallback: evaluates size more than once (see the documentation above)
+    #define IC_MALLOC_ARRAY(type, size) \
+        ((type *)ic_inner_malloc_array_impl( \
+            ((size) <= 0) ? 0u : (size_t)(size), \
+            sizeof(type)))
+
+#endif
 
 
 #endif // IC_MEMORY_H

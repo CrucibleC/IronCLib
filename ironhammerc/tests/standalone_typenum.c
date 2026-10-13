@@ -14,5 +14,6 @@ int standalone_typenum_second_value(void)
     // Uses everything generated, as unused static functions/consts warn when defined in a source file
     const int is_named = (StandaloneTypenum_to_string(StandaloneTypenum_First)[0] == 'F');
     const int is_distinct = !StandaloneTypenum_eq(StandaloneTypenum_First, StandaloneTypenum_Second);
-    return (is_named && is_distinct) ? StandaloneTypenum_get(StandaloneTypenum_Second) : -1;
+    const int is_valid = StandaloneTypenum_is_valid(StandaloneTypenum_Second);
+    return (is_named && is_distinct && is_valid) ? StandaloneTypenum_get(StandaloneTypenum_Second) : -1;
 }
