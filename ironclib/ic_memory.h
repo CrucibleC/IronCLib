@@ -55,6 +55,13 @@ Alignment support
 ===============================================================================
 */
 
+// Portable alignment measurement for C (not C++, which forbids defining a type inside sizeof).
+// Always defined so it can be tested on compilers that never select the fallback below.
+// In struct { char c; T m; }, common ABIs place m at offset alignof(T) and end the struct right after it
+// (sizeof(T) is a multiple of alignof(T)), so the size difference is exactly alignof(T).
+// This avoids defining a type inside offsetof, which C23 makes undefined behavior.
+#define IC_INNER_ALIGNOF_PORTABLE(x) (sizeof(struct { ic_byte c; x member; }) - sizeof(x))
+
 #if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
 
     #define IC_ALIGNAS(x) _Alignas(x)
@@ -81,13 +88,10 @@ Alignment support
 
 #else
 
-    // Pre-C11 C on an unknown compiler: no way to force alignment, but it can still be measured.
-    // In struct { char c; T m; }, common ABIs place m at offset alignof(T) and end the struct right after it
-    // (sizeof(T) is a multiple of alignof(T)), so the size difference is exactly alignof(T).
-    // This avoids defining a type inside offsetof, which C23 makes undefined behavior.
+    // Pre-C11 C on an unknown compiler: no way to force alignment, but it can still be measured
     #define IC_ALIGNAS_IS_BLANK
     #define IC_ALIGNAS(x)
-    #define IC_ALIGNOF(x) (sizeof(struct { ic_byte c; x member; }) - sizeof(x))
+    #define IC_ALIGNOF(x) IC_INNER_ALIGNOF_PORTABLE(x)
 
 #endif
 

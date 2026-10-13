@@ -424,6 +424,84 @@ IHC_TEST(verify_broadcast_signal_then_reset_wakes_current_waiters)
     ic_mutex_destroy(&data.mutex);
 }
 
+#define JOIN_RACE_THREADS 4
+
+typedef struct join_race_ctx
+{
+    ic_task* target;
+    ic_broadcast start;
+    ic_atomic_i32 release_target;
+    ic_atomic_i32 ok_count;
+    ic_atomic_i32 already_joined_count;
+} join_race_ctx;
+
+static int join_race_target_thread(void* arg)
+{
+    join_race_ctx* const ctx = (join_race_ctx*)arg;
+    while (ic_atomic_load(&ctx->release_target) == 0)
+    {
+        ic_thread_sleep(1);
+    }
+    return 0;
+}
+
+static int join_race_joiner_thread(void* arg)
+{
+    join_race_ctx* const ctx = (join_race_ctx*)arg;
+    (void)ic_broadcast_wait(&ctx->start);
+
+    const int result = ic_task_join(ctx->target);
+    if (result == IC_CONCURRENCY_OK)
+    {
+        (void)ic_atomic_fetch_add(&ctx->ok_count, 1);
+    }
+    else if (result == IC_CONCURRENCY_ALREADY_JOINED)
+    {
+        (void)ic_atomic_fetch_add(&ctx->already_joined_count, 1);
+    }
+    return 0;
+}
+
+IHC_TEST(verify_task_can_only_be_joined_once_under_contention)
+{
+    join_race_ctx ctx;
+    ic_task target;
+    ctx.target = &target;
+    ctx.release_target = ic_make_atomic(0);
+    ctx.ok_count = ic_make_atomic(0);
+    ctx.already_joined_count = ic_make_atomic(0);
+    IHC_ASSERT(ic_broadcast_init(&ctx.start) == IC_CONCURRENCY_OK);
+    IHC_ASSERT(ic_task_init(&target, join_race_target_thread, &ctx) == IC_CONCURRENCY_OK);
+
+    ic_task joiners[JOIN_RACE_THREADS];
+    for (int i = 0; i < JOIN_RACE_THREADS; i++)
+    {
+        IHC_ASSERT(ic_task_init(&joiners[i], join_race_joiner_thread, &ctx) == IC_CONCURRENCY_OK);
+    }
+
+    ic_thread_sleep(50); // let every joiner block on the start signal
+    IHC_ASSERT(ic_broadcast_signal_all(&ctx.start) == IC_CONCURRENCY_OK);
+
+    // The losers return at once, while the winner stays blocked in the join until the target exits
+    int waited_ms = 0;
+    while (ic_atomic_load(&ctx.already_joined_count) < JOIN_RACE_THREADS - 1 && waited_ms < 10000)
+    {
+        ic_thread_sleep(1);
+        waited_ms++;
+    }
+    ic_atomic_store(&ctx.release_target, 1);
+
+    for (int i = 0; i < JOIN_RACE_THREADS; i++)
+    {
+        IHC_CHECK(ic_task_join(&joiners[i]) == IC_CONCURRENCY_OK);
+    }
+
+    IHC_CHECK(ic_atomic_load(&ctx.ok_count) == 1);
+    IHC_CHECK(ic_atomic_load(&ctx.already_joined_count) == JOIN_RACE_THREADS - 1);
+
+    IHC_CHECK(ic_broadcast_destroy(&ctx.start) == IC_CONCURRENCY_OK);
+}
+
 // ==============================================================================
 // STRESS TESTS
 // ==============================================================================

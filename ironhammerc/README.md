@@ -52,6 +52,11 @@ SANITIZERS=thread python run_all.py
 
 Furthermore, the cmake and tests and can be reused for other compilers to validate compatibility in other build environments.
 
+Besides the runtime tests in `main.c`, the build also checks:
+- **Self-contained headers**: every header in `ironclib/` is compiled as the first and only include of a generated source file, and `tests/standalone_*.c` additionally use the macros of the code-generating headers with only their own header included.
+- **C++ branches**: `tests/cpp_compat.cpp` is compiled (not linked) as C++11 when a C++ compiler is available, covering the C++ branches of `IC_STATIC_ASSERT`, `IC_ALIGNAS` and `IC_ALIGNOF`.
+- **Compile errors**: `tests/compile_fail/*.c` are compiled at configure time and must fail with the expected error (with a control variant that must compile). Disable with `-DIHC_COMPILE_FAIL_TESTS=OFF`.
+
 ## TEST FRAMEWORK (ic_hammer.h)
 The framework is header-only and macro-based for maximum portability.
 

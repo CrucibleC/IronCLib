@@ -43,6 +43,7 @@ do { \
 #include "tests/concurrency_test.h"
 #include "tests/concurrency_signal_test.h"
 #include "tests/co_job_test.h"
+#include "tests/portability_test.h"
 
 IC_STATIC_ASSERT(8 == 2 * 4, "A simple verification that the static assert macro works correctly");
 
@@ -57,6 +58,8 @@ int main(void) {
     {
         // ic_static_assert.h
         IHC_TEST_ENTRY(verify_static_assert_works_inside_functions),
+        IHC_TEST_ENTRY(verify_portable_static_assert_works_inside_functions),
+        IHC_TEST_ENTRY(verify_portable_alignof_matches_native_alignof),
         // ic_inline.h
         IHC_TEST_ENTRY(verify_header_functions_can_be_used_in_multiple_source_files),
         // ic_memory.h
@@ -127,6 +130,7 @@ int main(void) {
         IHC_TEST_ENTRY(verify_broadcast_is_sticky_until_reset),
         IHC_TEST_ENTRY(verify_broadcast_reset_blocks_new_waiters),
         IHC_TEST_ENTRY(verify_broadcast_signal_then_reset_wakes_current_waiters),
+        IHC_TEST_ENTRY(verify_task_can_only_be_joined_once_under_contention),
         #if RUN_STRESS_TESTS
         IHC_TEST_ENTRY(stress_gate_interleave_deterministic),
         IHC_TEST_ENTRY(stress_gate_signal_before_wait_deterministic),
@@ -169,6 +173,7 @@ int main(void) {
         IHC_TEST_ENTRY(verify_scheduler_prioritizes_steps_by_priority),
         IHC_TEST_ENTRY(verify_scheduler_runs_steps_in_order_for_weighted_jobs),
         IHC_TEST_ENTRY(verify_scheduler_interleaves_jobs_with_default_scoring_system),
+        IHC_TEST_ENTRY(verify_scheduler_is_not_done_when_last_step_adds_a_job),
     };
 
     IHC_RUN(iron_c_lib_tests);

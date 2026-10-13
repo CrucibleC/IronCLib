@@ -33,6 +33,18 @@ For compilers without native static assert support, this will cause a compile-ti
 ===============================================================================
 */
 
+// Portable fallback, always defined so it can be tested on compilers that never select it.
+// A negative array size fails to compile. Redeclaring the same extern array is legal,
+// so no unique name is needed (which would require __COUNTER__, a C2y extension).
+#if defined(__GNUC__)
+    #define IC_INTERNAL_SA_UNUSED __attribute__((unused)) // gcc warns inside functions otherwise
+#else
+    #define IC_INTERNAL_SA_UNUSED
+#endif
+
+#define IC_INNER_STATIC_ASSERT_PORTABLE(cond, msg) \
+    extern char ic_static_assert_failed[(cond) ? 1 : -1] IC_INTERNAL_SA_UNUSED
+
 #if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
 
     #define IC_STATIC_ASSERT(cond, msg) _Static_assert(cond, msg)
@@ -45,16 +57,7 @@ For compilers without native static assert support, this will cause a compile-ti
 
 #else
 
-    // A negative array size fails to compile. Redeclaring the same extern array is legal,
-    // so no unique name is needed (which would require __COUNTER__, a C2y extension).
-    #if defined(__GNUC__)
-        #define IC_INTERNAL_SA_UNUSED __attribute__((unused)) // gcc warns inside functions otherwise
-    #else
-        #define IC_INTERNAL_SA_UNUSED
-    #endif
-
-    #define IC_STATIC_ASSERT(cond, msg) \
-        extern char ic_static_assert_failed[(cond) ? 1 : -1] IC_INTERNAL_SA_UNUSED
+    #define IC_STATIC_ASSERT(cond, msg) IC_INNER_STATIC_ASSERT_PORTABLE(cond, msg)
 
 #endif
 

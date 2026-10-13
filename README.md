@@ -260,7 +260,7 @@ Requires C99 or newer.
 
 MSVC (/W4 + /WX) requires /wd4127 due to `do { ... } while(0)` macros. GCC and Clang handle this pattern without issues.
 
-When using `ic_num_cast.h`, some compilers (especially non-GCC, non-Clang, or non-MSVC, or non-standard toolchains) may require manual warning suppression depending on their diagnostic system and C standard support.
+When using `ic_num_cast.h`, some compilers (especially non-GCC, non-Clang, or non-MSVC, or non-standard toolchains) may require manual warning suppression depending on their diagnostic system and C standard support. The generated cast functions suppress all warnings on Clang, but only the ones triggered under `-Wall -Wextra -Wpedantic` on GCC and `/W4` on MSVC, so stricter opt-in GCC flags such as `-Wconversion` or `-Wfloat-equal` may still warn (see `ic_disable_warnings.h`).
 
 `ic_static_assert.h` uses native static assert when available, otherwise a fallback based on an `extern` array declaration is used (no extra warning suppression needed on GCC/Clang).
 

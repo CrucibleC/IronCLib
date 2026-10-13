@@ -103,6 +103,8 @@ Task lifetime rules:
 - The thread keeps a pointer to the ic_task, so never copy or move an ic_task after ic_task_init.
 - Every successfully initialized task must be either joined or detached exactly once, otherwise the
   thread's resources leak. A second join/detach returns IC_CONCURRENCY_ALREADY_JOINED.
+- A join or detach that returns IC_CONCURRENCY_FAILURE released nothing, so the task can still be
+  joined or detached afterwards.
 - A detached task still writes its result and running state into the ic_task, so the ic_task must
   stay valid until ic_task_is_running returns 0. After that the thread never touches it again.
 
@@ -437,27 +439,31 @@ IC_HEADER_FUNC int ic_task_join(ic_task* const t)
         return IC_CONCURRENCY_ALREADY_JOINED;
     }
 
+    int joined = 1;
+
 #if defined(IC_THREAD_C11)
-    if (thrd_join(t->UNSAFE_PRIVATE_ACCESS_THREAD_HANDLE, NULL) != thrd_success)
-    {
-        return IC_CONCURRENCY_FAILURE;
-    }
+    joined = (thrd_join(t->UNSAFE_PRIVATE_ACCESS_THREAD_HANDLE, NULL) == thrd_success);
 
 #elif defined(IC_THREAD_PTHREAD)
-    if (pthread_join(t->UNSAFE_PRIVATE_ACCESS_THREAD_HANDLE, NULL) != 0)
-    {
-        return IC_CONCURRENCY_FAILURE;
-    }
+    joined = (pthread_join(t->UNSAFE_PRIVATE_ACCESS_THREAD_HANDLE, NULL) == 0);
 
 #elif defined(IC_THREAD_WIN)
-    DWORD wait_result = WaitForSingleObject(t->UNSAFE_PRIVATE_ACCESS_THREAD_HANDLE, INFINITE);
-    CloseHandle(t->UNSAFE_PRIVATE_ACCESS_THREAD_HANDLE);
-    if (wait_result != WAIT_OBJECT_0)
+    // The handle is only closed once the thread is known to have exited, so a failed wait
+    // leaves it valid for another join or a detach
+    joined = (WaitForSingleObject(t->UNSAFE_PRIVATE_ACCESS_THREAD_HANDLE, INFINITE) == WAIT_OBJECT_0);
+    if (joined)
     {
-        return IC_CONCURRENCY_FAILURE;
+        CloseHandle(t->UNSAFE_PRIVATE_ACCESS_THREAD_HANDLE);
     }
 
 #endif
+
+    if (!joined)
+    {
+        // Nothing was released, so give up the claim: the task can still be joined or detached
+        ic_atomic_store(&t->UNSAFE_PRIVATE_ACCESS_IS_JOINED, 0);
+        return IC_CONCURRENCY_FAILURE;
+    }
 
     return IC_CONCURRENCY_OK;
 }
@@ -476,26 +482,26 @@ IC_HEADER_FUNC int ic_task_detach(ic_task* const t)
         return IC_CONCURRENCY_ALREADY_JOINED;
     }
 
+    int detached = 1;
+
 #if defined(IC_THREAD_C11)
-    if (thrd_detach(t->UNSAFE_PRIVATE_ACCESS_THREAD_HANDLE) != thrd_success)
-    {
-        return IC_CONCURRENCY_FAILURE;
-    }
+    detached = (thrd_detach(t->UNSAFE_PRIVATE_ACCESS_THREAD_HANDLE) == thrd_success);
 
 #elif defined(IC_THREAD_PTHREAD)
-    if (pthread_detach(t->UNSAFE_PRIVATE_ACCESS_THREAD_HANDLE) != 0)
-    {
-        return IC_CONCURRENCY_FAILURE;
-    }
+    detached = (pthread_detach(t->UNSAFE_PRIVATE_ACCESS_THREAD_HANDLE) == 0);
 
 #elif defined(IC_THREAD_WIN)
     // The thread keeps running; closing the handle only releases this process's reference to it
-    if (!CloseHandle(t->UNSAFE_PRIVATE_ACCESS_THREAD_HANDLE))
-    {
-        return IC_CONCURRENCY_FAILURE;
-    }
+    detached = (CloseHandle(t->UNSAFE_PRIVATE_ACCESS_THREAD_HANDLE) != 0);
 
 #endif
+
+    if (!detached)
+    {
+        // Nothing was released, so give up the claim: the task can still be joined or detached
+        ic_atomic_store(&t->UNSAFE_PRIVATE_ACCESS_IS_JOINED, 0);
+        return IC_CONCURRENCY_FAILURE;
+    }
 
     return IC_CONCURRENCY_OK;
 }
