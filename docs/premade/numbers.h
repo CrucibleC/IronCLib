@@ -36,6 +36,7 @@ MUTALLY EXCLUSIVE CAST SUPPORT FOR:
 */
 
 #include "ironclib/ic_num_cast.h"
+#include "ironclib/ic_glue_macro.h" // IC_EXPAND
 #include "ironclib/ic_static_assert.h"
 
 #include <stdint.h>
@@ -79,8 +80,10 @@ typedef double f64;
 #define SIZE_DATA size_t, IC_MOLD_UNSIGNED_INT, 0, SIZE_MAX
 
 // Expansion helper macros
+// A and B expand to four comma-separated values each. IC_EXPAND makes MSVC's traditional preprocessor
+// (C++ by default, C without /std:c11) split them into separate arguments too; see ic_glue_macro.h.
 #define DATA_PAIR_IMPL(X, a1,a2,a3,a4,b1,b2,b3,b4) X(a1,a2,a3,a4,b1,b2,b3,b4)
-#define DATA_PAIR(X, A, B) DATA_PAIR_IMPL(X, A, B)
+#define DATA_PAIR(X, A, B) IC_EXPAND(DATA_PAIR_IMPL(X, A, B))
 
 // Define all cast conversion functions in x list format
 #define CAST_CONVERSION_MATRIX(X)       \

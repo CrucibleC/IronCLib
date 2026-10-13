@@ -545,8 +545,10 @@ typedef float f32;
 #define F32_DATA f32, IC_MOLD_FLOAT, -FLT_MAX, FLT_MAX
 
 // Expansion helper macros
+// IC_EXPAND (from ic_glue_macro.h, included by ic_num_cast.h) is required for MSVC's traditional
+// preprocessor, which would otherwise pass each expanded A and B on as a single argument
 #define DATA_PAIR_IMPL(X, a1,a2,a3,a4,b1,b2,b3,b4) X(a1,a2,a3,a4,b1,b2,b3,b4)
-#define DATA_PAIR(X, A, B) DATA_PAIR_IMPL(X, A, B)
+#define DATA_PAIR(X, A, B) IC_EXPAND(DATA_PAIR_IMPL(X, A, B))
 
 // Define all cast conversion functions in x list format
 // For i8, i16, i32, i64, u8, u16, u32, u64, f32, f64 

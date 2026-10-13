@@ -45,6 +45,12 @@ IHC_TEST(verify_memory_handles_every_integer_size_type)
     IHC_CHECK(IC_MALLOC_ARRAY(int, negative_schar) == NULL);
     IHC_CHECK(IC_MALLOC_ARRAY(int, negative_llong) == NULL);
 
+    // Plain char is its own type in ISO C (MSVC treats it as signed/unsigned char instead)
+    const char char_size = 4;
+    int* const from_char = IC_MALLOC_ARRAY(int, char_size);
+    IHC_CHECK(from_char != NULL);
+    free(from_char);
+
     // Qualified (const) and unsigned sizes allocate normally
     const unsigned short ushort_size = 4;
     const unsigned long long ullong_size = 4;

@@ -154,6 +154,8 @@ if (CMAKE_CXX_COMPILER)
     if (CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         target_compile_options(ihc_cpp_compat PRIVATE ${OPT_LEVEL} -Wall -Wextra -Wpedantic -Werror)
     elseif (MSVC)
+        # Deliberately WITHOUT /Zc:preprocessor: MSVC C++ uses its traditional preprocessor by default,
+        # so this checks that every macro also works there (the C target gets the conforming one via /std:c11)
         target_compile_options(ihc_cpp_compat PRIVATE ${_msvc_opt} /W4 /WX /wd4127) # same as the C target
     endif()
 

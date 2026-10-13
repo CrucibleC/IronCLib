@@ -29,5 +29,13 @@
 #define IC_GLUE8(a, b, c, d, e, f, g, h) IC_GLUE(IC_GLUE7(a, b, c, d, e, f, g), h)
 #define IC_GLUE9(a, b, c, d, e, f, g, h, i) IC_GLUE(IC_GLUE8(a, b, c, d, e, f, g, h), i)
 
+// Rescans its argument once more. Needed when a macro forwards an argument that expands to a
+// comma-separated list (or forwards __VA_ARGS__) to another macro: MSVC's traditional preprocessor
+// (C++ by default, and C without /std:c11 or /Zc:preprocessor) passes such an expansion on as ONE
+// argument instead of splitting it at the commas. Wrapping the forwarding call in IC_EXPAND makes
+// that preprocessor split it too, and changes nothing for conforming preprocessors.
+//     #define PAIR(X, A, B) IC_EXPAND(PAIR_IMPL(X, A, B))   // A and B expand to "a1, a2, ..."
+#define IC_EXPAND(x) x
+
 
 #endif // IC_GLUE_MACRO_H

@@ -19,6 +19,7 @@
 
 #include <stddef.h>
 #include "ic_inline.h"
+#include "ic_glue_macro.h" // IC_EXPAND
 
 // C++ compatibility: C linkage for everything declared below. Placed after the #includes,
 // since system and other library headers must not be wrapped in an extern "C" block.
@@ -29,10 +30,10 @@ extern "C" {
 /*
 Compatibility:
     - C99+ supported
-    - IC_MAKE_CO_JOB(...) relies on variadic macro argument expansion and supports 
-      up to IC_CO_MAX_STEPS entries (default 10). While this works on modern C99 
-      compilers including GCC, Clang, and MSVC, some older or non-conforming 
-      preprocessors may handle variadic macro expansion differently. 
+    - IC_MAKE_CO_JOB(...) relies on variadic macro argument expansion and supports
+      1 to 10 entries. It works on GCC, Clang, and MSVC with either preprocessor
+      (the traditional one, default in MSVC C++, is handled with IC_EXPAND), but other
+      old or non-conforming preprocessors may handle variadic macro expansion differently.
     - For maximum portability, jobs can always be constructed manually with 
       ic_make_co_job and ic_co_job_add_step instead of using the macro shortcut.
 */
@@ -179,8 +180,11 @@ typedef struct ic_co_scheduler
      _6,_7,_8,_9,_10, \
      NAME,...) NAME
 
+// __VA_ARGS__ is forwarded twice: to IC_INNER_GET_MACRO (to pick the _N macro), and to the picked
+// macro. MSVC's traditional preprocessor would pass it as ONE argument both times, so each
+// forwarding is wrapped in IC_EXPAND (see ic_glue_macro.h). Conforming preprocessors are unaffected.
 #define IC_MAKE_CO_JOB(...) \
-    IC_INNER_GET_MACRO( \
+    IC_EXPAND(IC_EXPAND(IC_INNER_GET_MACRO( \
         __VA_ARGS__, \
         IC_INNER_MAKE_CO_JOB_10, \
         IC_INNER_MAKE_CO_JOB_9, \
@@ -192,7 +196,7 @@ typedef struct ic_co_scheduler
         IC_INNER_MAKE_CO_JOB_3, \
         IC_INNER_MAKE_CO_JOB_2, \
         IC_INNER_MAKE_CO_JOB_1, \
-    )(__VA_ARGS__)
+    ))(__VA_ARGS__))
 
 // ========== CO JOB ==========
 

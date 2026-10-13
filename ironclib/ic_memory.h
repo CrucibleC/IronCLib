@@ -188,10 +188,20 @@ Example:
 
     #define IC_MALLOC_ARRAY_SINGLE_EVALUATION 1
 
-    // Plain char may be signed or unsigned; the signed helper handles both ranges correctly
+    // Plain char is a distinct type in ISO C and needs its own association; the signed helper
+    // handles both possible char ranges correctly. MSVC (not clang-cl) deviates from the standard
+    // and treats plain char as the same type as signed char (unsigned char with /J), so a separate
+    // char association is a compile error there (C7700). Without it, plain char matches whichever
+    // of the two MSVC considers it equal to, which picks the correct helper in both modes.
+    #if defined(_MSC_VER) && !defined(__clang__)
+        #define IC_INNER_MALLOC_ARRAY_PLAIN_CHAR_ASSOCIATION
+    #else
+        #define IC_INNER_MALLOC_ARRAY_PLAIN_CHAR_ASSOCIATION char: ic_inner_malloc_array_signed,
+    #endif
+
     #define IC_MALLOC_ARRAY(type, size) \
         ((type *)_Generic((size), \
-            char:               ic_inner_malloc_array_signed, \
+            IC_INNER_MALLOC_ARRAY_PLAIN_CHAR_ASSOCIATION \
             signed char:        ic_inner_malloc_array_signed, \
             short:              ic_inner_malloc_array_signed, \
             int:                ic_inner_malloc_array_signed, \

@@ -259,6 +259,8 @@ Requires C99 or newer.
 
 MSVC (/W4 + /WX) requires /wd4127 due to `do { ... } while(0)` macros. GCC and Clang handle this pattern without issues.
 
+IronCLib works with both MSVC preprocessors: the conforming one (`/Zc:preprocessor`, enabled automatically by `/std:c11` and later in C) and the traditional one (the default in C++, and in C without `/std:c11`). `/Zc:preprocessor` is recommended but not required. The traditional preprocessor passes a macro argument that expands to a comma-separated list on as a single argument. IronCLib's macros that forward such arguments (`IC_MAKE_CO_JOB`, and `DATA_PAIR` in `premade/numbers.h`) wrap the forwarding in `IC_EXPAND` to handle this. Do the same in your own macros that forward lists or `__VA_ARGS__`, e.g. `#define PAIR(X, A, B) IC_EXPAND(PAIR_IMPL(X, A, B))`.
+
 When using `ic_num_cast.h`, some compilers (especially non-GCC, non-Clang, or non-MSVC, or non-standard toolchains) may require manual warning suppression depending on their diagnostic system and C standard support. The generated cast functions suppress all warnings on Clang, but only the ones triggered under `-Wall -Wextra -Wpedantic` on GCC and `/W4` on MSVC, so stricter opt-in GCC flags such as `-Wconversion` or `-Wfloat-equal` may still warn (see `ic_disable_warnings.h`).
 
 `ic_static_assert.h` uses native static assert when available, otherwise a fallback based on an `extern` array declaration is used (no extra warning suppression needed on GCC/Clang).
